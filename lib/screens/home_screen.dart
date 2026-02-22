@@ -9,6 +9,8 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final authService = AuthService();
     final user = authService.currentUser;
+    
+    print("HomeScreen building with user: ${user?.email}");
 
     return Scaffold(
       appBar: AppBar(
@@ -23,6 +25,14 @@ class HomeScreen extends StatelessWidget {
             icon: const Icon(Icons.logout),
             onPressed: () async {
               await authService.signOut();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Signed out successfully'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
             },
           ),
         ],
@@ -57,21 +67,10 @@ class HomeScreen extends StatelessWidget {
                 ),
               ),
             ),
-            ListTile(
-              leading: Container(
-                width: 30,
-                height: 30,
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.looks_one, color: Colors.blue, size: 20),
-              ),
-              title: const Text(
-                'Year I',
-                style: TextStyle(fontWeight: FontWeight.w500),
-              ),
-              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+            _buildDrawerItem(
+              icon: Icons.looks_one,
+              title: 'Year I',
+              color: Colors.blue,
               onTap: () {
                 Navigator.pop(context);
                 Navigator.push(
@@ -82,21 +81,10 @@ class HomeScreen extends StatelessWidget {
                 );
               },
             ),
-            ListTile(
-              leading: Container(
-                width: 30,
-                height: 30,
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.looks_two, color: Colors.blue, size: 20),
-              ),
-              title: const Text(
-                'Year II',
-                style: TextStyle(fontWeight: FontWeight.w500),
-              ),
-              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+            _buildDrawerItem(
+              icon: Icons.looks_two,
+              title: 'Year II',
+              color: Colors.blue,
               onTap: () {
                 Navigator.pop(context);
                 Navigator.push(
@@ -107,21 +95,10 @@ class HomeScreen extends StatelessWidget {
                 );
               },
             ),
-            ListTile(
-              leading: Container(
-                width: 30,
-                height: 30,
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.looks_3, color: Colors.blue, size: 20),
-              ),
-              title: const Text(
-                'Year III',
-                style: TextStyle(fontWeight: FontWeight.w500),
-              ),
-              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+            _buildDrawerItem(
+              icon: Icons.looks_3,
+              title: 'Year III',
+              color: Colors.blue,
               onTap: () {
                 Navigator.pop(context);
                 Navigator.push(
@@ -132,21 +109,10 @@ class HomeScreen extends StatelessWidget {
                 );
               },
             ),
-            ListTile(
-              leading: Container(
-                width: 30,
-                height: 30,
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.looks_4, color: Colors.blue, size: 20),
-              ),
-              title: const Text(
-                'Year IV',
-                style: TextStyle(fontWeight: FontWeight.w500),
-              ),
-              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+            _buildDrawerItem(
+              icon: Icons.looks_4,
+              title: 'Year IV',
+              color: Colors.blue,
               onTap: () {
                 Navigator.pop(context);
                 Navigator.push(
@@ -169,21 +135,10 @@ class HomeScreen extends StatelessWidget {
                 ),
               ),
             ),
-            ListTile(
-              leading: Container(
-                width: 30,
-                height: 30,
-                decoration: BoxDecoration(
-                  color: Colors.green.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.looks_one, color: Colors.green, size: 20),
-              ),
-              title: const Text(
-                'Year I',
-                style: TextStyle(fontWeight: FontWeight.w500),
-              ),
-              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+            _buildDrawerItem(
+              icon: Icons.looks_one,
+              title: 'Year I',
+              color: Colors.green,
               onTap: () {
                 Navigator.pop(context);
                 Navigator.push(
@@ -194,21 +149,10 @@ class HomeScreen extends StatelessWidget {
                 );
               },
             ),
-            ListTile(
-              leading: Container(
-                width: 30,
-                height: 30,
-                decoration: BoxDecoration(
-                  color: Colors.green.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.looks_two, color: Colors.green, size: 20),
-              ),
-              title: const Text(
-                'Year II',
-                style: TextStyle(fontWeight: FontWeight.w500),
-              ),
-              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+            _buildDrawerItem(
+              icon: Icons.looks_two,
+              title: 'Year II',
+              color: Colors.green,
               onTap: () {
                 Navigator.pop(context);
                 Navigator.push(
@@ -301,6 +245,31 @@ class HomeScreen extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildDrawerItem({
+    required IconData icon,
+    required String title,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      leading: Container(
+        width: 30,
+        height: 30,
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),  // Fixed: using withOpacity instead of withValues
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(icon, color: color, size: 20),
+      ),
+      title: Text(
+        title,
+        style: const TextStyle(fontWeight: FontWeight.w500),
+      ),
+      trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+      onTap: onTap,
     );
   }
 }

@@ -5,7 +5,9 @@ import 'package:http/http.dart' as http;
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final GoogleSignIn _googleSignIn = GoogleSignIn(
+  
+  // Store the GoogleSignIn instance to maintain state
+  static final GoogleSignIn _googleSignIn = GoogleSignIn(
     scopes: [
       drive.DriveApi.driveFileScope,
       'email',
@@ -17,6 +19,9 @@ class AuthService {
   Future<User?> signInWithGoogle() async {
     try {
       print("Starting Google Sign-In...");
+      
+      // First, ensure any existing sign-in is cleared
+      await _googleSignIn.signOut();
       
       // Trigger Google Sign In
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
@@ -69,13 +74,25 @@ class AuthService {
   // Get authenticated Drive API client
   Future<drive.DriveApi?> getDriveApi() async {
     try {
+      // Check if user is signed in to Google
       final GoogleSignInAccount? googleUser = _googleSignIn.currentUser;
+      
       if (googleUser == null) {
-        print("No user signed in");
-        return null;
+        print("No Google user signed in - attempting to get current user");
+        // Try to get the current user silently
+        final currentUser = await _googleSignIn.signInSilently();
+        if (currentUser == null) {
+          print("Still no Google user - please sign in again");
+          return null;
+        }
+        print("Got Google user silently: ${currentUser.email}");
+        
+        final authHeaders = await currentUser.authHeaders;
+        final client = GoogleAuthClient(authHeaders);
+        return drive.DriveApi(client);
       }
       
-      print("Getting auth headers for: ${googleUser.email}");
+      print("Getting Drive API for: ${googleUser.email}");
       final authHeaders = await googleUser.authHeaders;
       final client = GoogleAuthClient(authHeaders);
       return drive.DriveApi(client);
@@ -87,6 +104,11 @@ class AuthService {
 
   // Check if user is signed in
   User? get currentUser => _auth.currentUser;
+  
+  // Get the current Google user
+  Future<GoogleSignInAccount?> getCurrentGoogleUser() async {
+    return _googleSignIn.currentUser ?? await _googleSignIn.signInSilently();
+  }
 }
 
 // Helper class for authenticated HTTP requests

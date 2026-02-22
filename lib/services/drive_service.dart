@@ -7,14 +7,17 @@ class DriveService {
   final AuthService _authService = AuthService();
   static const String _appFolderName = 'ShilpaStudyApp';
 
-  // Store folder IDs locally (NO actual files stored)
+  // Store folder IDs locally
   final Map<String, String> _folderIds = {};
 
   // Initialize app folder structure
   Future<bool> initializeAppFolder() async {
     try {
       final driveApi = await _authService.getDriveApi();
-      if (driveApi == null) return false;
+      if (driveApi == null) {
+        print("❌ Failed to get Drive API - user not authenticated");
+        return false;
+      }
 
       // Load saved folder IDs
       await _loadFolderIds();
@@ -23,32 +26,47 @@ class DriveService {
       String? appFolderId = _folderIds['root'];
       
       if (appFolderId == null) {
-        // Create main folder
-        final folder = drive.File()
-          ..name = _appFolderName
-          ..mimeType = 'application/vnd.google-apps.folder';
+        print("📁 Creating main app folder: $_appFolderName");
         
-        final created = await driveApi.files.create(folder);
-        appFolderId = created.id;
+        // Search for existing folder first
+        final searchResult = await driveApi.files.list(
+          q: "name='$_appFolderName' and mimeType='application/vnd.google-apps.folder' and trashed=false",
+          spaces: 'drive',
+        );
+        
+        if (searchResult.files != null && searchResult.files!.isNotEmpty) {
+          appFolderId = searchResult.files!.first.id;
+          print("✅ Found existing folder: $appFolderId");
+        } else {
+          // Create new folder
+          final folder = drive.File()
+            ..name = _appFolderName
+            ..mimeType = 'application/vnd.google-apps.folder';
+          
+          final created = await driveApi.files.create(folder);
+          appFolderId = created.id;
+          print("✅ Created new folder: $appFolderId");
+        }
+        
         _folderIds['root'] = appFolderId!;
         await _saveFolderIds();
       }
 
       return true;
     } catch (e) {
-      print('Error initializing: $e');
+      print('❌ Error initializing Drive: $e');
       return false;
     }
   }
 
-  // Create academic year folder (I, II, III, IV)
-  Future<String?> createYearFolder(String year, {String? parentId}) async {
-    return await _createFolder(year, parentId ?? _folderIds['root']);
+  // Create academic year folder
+  Future<String?> createYearFolder(String year) async {
+    return await _createFolder(year, _folderIds['root']);
   }
 
-  // Create semester folder (Semester I, Semester II)
+  // Create semester folder
   Future<String?> createSemesterFolder(String semester, String parentId) async {
-    return await _createFolder('Semester $semester', parentId);
+    return await _createFolder(semester, parentId);
   }
 
   // Create subject folder
@@ -65,22 +83,74 @@ class DriveService {
   Future<String?> _createFolder(String name, String? parentId) async {
     try {
       final driveApi = await _authService.getDriveApi();
-      if (driveApi == null) return null;
+      if (driveApi == null) {
+        print("❌ Cannot create folder - Drive API not available");
+        print("   🔄 Trying to refresh Google Sign-In...");
+        
+        // Try to refresh Google Sign-In
+        final googleUser = await _authService.getCurrentGoogleUser();
+        if (googleUser == null) {
+          print("❌ Still not authenticated - user needs to sign in again");
+          return null;
+        }
+        
+        print("✅ Got Google user: ${googleUser.email}");
+        
+        // Try one more time
+        final newDriveApi = await _authService.getDriveApi();
+        if (newDriveApi == null) {
+          print("❌ Still cannot get Drive API");
+          return null;
+        }
+        
+        // Use the new API to create folder
+        return await _createFolderWithApi(newDriveApi, name, parentId);
+      }
 
-      final folder = drive.File()
-        ..name = name
-        ..mimeType = 'application/vnd.google-apps.folder'
-        ..parents = parentId != null ? [parentId] : null;
-
-      final created = await driveApi.files.create(folder);
-      return created.id;
+      return await _createFolderWithApi(driveApi, name, parentId);
     } catch (e) {
-      print('Error creating folder: $e');
+      print('❌ Error creating folder $name: $e');
       return null;
     }
   }
 
-  // Save folder IDs locally (only IDs, no files)
+  // Helper method to actually create folder with API
+  Future<String?> _createFolderWithApi(drive.DriveApi driveApi, String name, String? parentId) async {
+    try {
+      if (parentId == null) {
+        print("❌ Cannot create folder - no parent ID");
+        return null;
+      }
+
+      print("📁 Creating folder: $name in parent: $parentId");
+
+      // Check if folder already exists
+      final searchResult = await driveApi.files.list(
+        q: "name='$name' and '$parentId' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
+        spaces: 'drive',
+      );
+      
+      if (searchResult.files != null && searchResult.files!.isNotEmpty) {
+        print("✅ Folder already exists: ${searchResult.files!.first.id}");
+        return searchResult.files!.first.id;
+      }
+
+      // Create new folder
+      final folder = drive.File()
+        ..name = name
+        ..mimeType = 'application/vnd.google-apps.folder'
+        ..parents = [parentId];
+
+      final created = await driveApi.files.create(folder);
+      print("✅ Folder created successfully: ${created.id}");
+      return created.id;
+    } catch (e) {
+      print('❌ Error in folder creation: $e');
+      return null;
+    }
+  }
+
+  // Save folder IDs locally
   Future<void> _saveFolderIds() async {
     final prefs = await SharedPreferences.getInstance();
     _folderIds.forEach((key, value) {
@@ -106,15 +176,16 @@ class DriveService {
   }) async {
     try {
       final driveApi = await _authService.getDriveApi();
-      if (driveApi == null) return false;
+      if (driveApi == null) {
+        print("❌ Cannot upload file - not authenticated");
+        return false;
+      }
 
       final file = drive.File()
         ..name = fileName
         ..parents = [folderId];
 
-      // Read file bytes
-      final bytes = await _readFileBytes(filePath);
-      
+      final bytes = io.File(filePath);
       final media = drive.Media(bytes.openRead(), bytes.lengthSync());
       
       await driveApi.files.create(
@@ -122,15 +193,16 @@ class DriveService {
         uploadMedia: media,
       );
       
+      print("✅ File uploaded successfully: $fileName");
       return true;
     } catch (e) {
-      print('Error uploading: $e');
+      print('❌ Error uploading: $e');
       return false;
     }
   }
 
-  // Helper to read file
-  Future<io.File> _readFileBytes(String path) async {
-    return io.File(path);
+  // Get folder ID for root
+  String? getRootFolderId() {
+    return _folderIds['root'];
   }
 }
