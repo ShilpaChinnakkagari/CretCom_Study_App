@@ -5,6 +5,9 @@ import 'package:image_picker/image_picker.dart';
 import 'package:shilpa_study_app/models/academic_models.dart';
 import 'package:shilpa_study_app/services/drive_service.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:googleapis/drive/v3.dart' as drive;
 
 class NotesScreen extends StatefulWidget {
   final AcademicYear year;
@@ -38,7 +41,6 @@ class _NotesScreenState extends State<NotesScreen> {
 
   void _loadNotes() {
     // TODO: Load notes from SharedPreferences
-    // For now, we'll just show empty list
     setState(() {});
   }
 
@@ -73,7 +75,7 @@ class _NotesScreenState extends State<NotesScreen> {
             });
             
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('✅ $fileName uploaded')),
+              SnackBar(content: Text('✅ $fileName uploaded'), backgroundColor: Colors.green),
             );
           }
         }
@@ -116,7 +118,7 @@ class _NotesScreenState extends State<NotesScreen> {
             });
             
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('✅ Image captured and uploaded')),
+              SnackBar(content: Text('✅ Image captured and uploaded'), backgroundColor: Colors.green),
             );
           }
         }
@@ -161,7 +163,7 @@ class _NotesScreenState extends State<NotesScreen> {
           
           _textNoteController.clear();
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('✅ Text note saved')),
+            SnackBar(content: Text('✅ Text note saved'), backgroundColor: Colors.green),
           );
         }
       }
@@ -174,9 +176,167 @@ class _NotesScreenState extends State<NotesScreen> {
     }
   }
 
+  // Download file from Drive
+  Future<File?> _downloadFromDrive(String fileName) async {
+    try {
+      // Show loading
+      if (!mounted) return null;
+      
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+
+      // Get Drive API
+      final driveApi = await _driveService.getDriveApi();
+      if (driveApi == null) {
+        if (mounted) Navigator.pop(context);
+        throw Exception('Not authenticated');
+      }
+
+      // Search for the file in the current unit folder
+      final searchResult = await driveApi.files.list(
+        q: "name='$fileName' and '${widget.unit.folderId}' in parents and trashed=false",
+        spaces: 'drive',
+      );
+
+      if (searchResult.files == null || searchResult.files!.isEmpty) {
+        if (mounted) Navigator.pop(context);
+        throw Exception('File not found in Drive');
+      }
+
+      final fileMetadata = searchResult.files!.first;
+      
+      // Download the file
+      final downloadDir = await getApplicationDocumentsDirectory();
+      final downloadPath = '${downloadDir.path}/$fileName';
+      final downloadFile = File(downloadPath);
+
+      // Download file content
+      final response = await driveApi.files.get(
+        fileMetadata.id!,
+        downloadOptions: drive.DownloadOptions.fullMedia,
+      );
+
+      // Check if response is Media type
+      if (response is drive.Media) {
+        // Write to local file
+        final sink = downloadFile.openWrite();
+        await response.stream.pipe(sink);
+        await sink.close();
+        
+        if (mounted) Navigator.pop(context); // Close loading dialog
+        return downloadFile;
+      } else {
+        if (mounted) Navigator.pop(context);
+        throw Exception('Unexpected response type from Drive API');
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Close loading dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Download failed: $e'), backgroundColor: Colors.red),
+        );
+      }
+      return null;
+    }
+  }
+
+  // View downloaded file
+  Future<void> _viewDownloadedFile(File file, String fileName) async {
+    if (fileName.toLowerCase().endsWith('.jpg') ||
+        fileName.toLowerCase().endsWith('.jpeg') ||
+        fileName.toLowerCase().endsWith('.png')) {
+      // View image
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => Scaffold(
+            appBar: AppBar(
+              title: Text(fileName),
+              backgroundColor: Colors.black,
+            ),
+            body: Center(
+              child: InteractiveViewer(
+                panEnabled: true,
+                minScale: 0.5,
+                maxScale: 4.0,
+                child: Image.file(file),
+              ),
+            ),
+          ),
+        ),
+      );
+    } else if (fileName.toLowerCase().endsWith('.txt')) {
+      // View text file
+      String content = await file.readAsString();
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(fileName),
+          content: Container(
+            width: double.maxFinite,
+            height: 400,
+            child: SingleChildScrollView(
+              child: Text(content),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(context);
+                await Share.shareXFiles([XFile(file.path)]);
+              },
+              child: const Text('Share'),
+            ),
+          ],
+        ),
+      );
+    } else {
+      // For PDFs and other files, open externally
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(fileName),
+          content: const Text('How would you like to open this file?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(context);
+                await Share.shareXFiles([XFile(file.path)]);
+              },
+              child: const Text('Share'),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(context);
+                await launchUrl(
+                  Uri.file(file.path),
+                  mode: LaunchMode.externalApplication,
+                );
+              },
+              child: const Text('Open'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
   Future<void> _viewNote(Note note) async {
     try {
-      // For text notes, show in a dialog
+      // For text notes created in-app
       if (note.content != null && note.content!.isNotEmpty) {
         showDialog(
           context: context,
@@ -197,42 +357,13 @@ class _NotesScreenState extends State<NotesScreen> {
             ],
           ),
         );
-      } else {
-        // For files, we need to get a download link from Drive
-        // Since we can't directly open files, show options
-        showModalBottomSheet(
-          context: context,
-          builder: (context) => Container(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.open_in_browser, color: Colors.blue),
-                  title: const Text('Open in Google Drive'),
-                  onTap: () async {
-                    Navigator.pop(context);
-                    // In a real app, you'd construct the Drive URL
-                    // For now, show coming soon
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Opening in Drive - Coming soon!')),
-                    );
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.share, color: Colors.green),
-                  title: const Text('Share'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Share - Coming soon!')),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-        );
+        return;
+      }
+
+      // For uploaded files, download from Drive
+      final downloadedFile = await _downloadFromDrive(note.title);
+      if (downloadedFile != null && mounted) {
+        await _viewDownloadedFile(downloadedFile, note.title);
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -245,7 +376,10 @@ class _NotesScreenState extends State<NotesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('${widget.unit.name} - Notes'),
+        title: Text(
+          '${widget.unit.name} - Notes',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
         backgroundColor: Colors.purple,
         foregroundColor: Colors.white,
       ),
@@ -397,8 +531,13 @@ class _NotesScreenState extends State<NotesScreen> {
                                 onPressed: () => _viewNote(note),
                               ),
                               IconButton(
-                                icon: const Icon(Icons.cloud_done, color: Colors.green),
-                                onPressed: () {},
+                                icon: const Icon(Icons.share, color: Colors.green),
+                                onPressed: () async {
+                                  final file = await _downloadFromDrive(note.title);
+                                  if (file != null) {
+                                    await Share.shareXFiles([XFile(file.path)]);
+                                  }
+                                },
                               ),
                             ],
                           ),

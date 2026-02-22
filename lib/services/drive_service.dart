@@ -10,6 +10,11 @@ class DriveService {
   // Store folder IDs locally
   final Map<String, String> _folderIds = {};
 
+  // Add this NEW method
+  Future<drive.DriveApi?> getDriveApi() async {
+    return await _authService.getDriveApi();
+  }
+
   // Initialize app folder structure
   Future<bool> initializeAppFolder() async {
     try {
