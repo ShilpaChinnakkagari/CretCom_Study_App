@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.shilpa.study_app"
-    compileSdk = 34
+    compileSdk = 35
     ndkVersion = "26.1.10909125"
 
     compileOptions {
