@@ -39,10 +39,15 @@ dependencies:
   
   # URL Launcher
   url_launcher: ^6.3.1
-  share_plus: 7.2.0
-  path_provider: 2.1.3
   
-  # NEW - Use older stable versions
+  # Share
+  share_plus: ^7.2.0
+  
+  # Path Provider
+  path_provider: ^2.1.3
+  
+  # PDF Viewer - ADD THIS
+  flutter_pdfview: ^1.3.2
 
 dev_dependencies:
   flutter_test:

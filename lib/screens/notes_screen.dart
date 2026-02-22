@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
@@ -8,6 +9,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shilpa_study_app/screens/pdf_viewer_screen.dart'; // ADD THIS
 
 class NotesScreen extends StatefulWidget {
   final AcademicYear year;
@@ -32,16 +35,44 @@ class _NotesScreenState extends State<NotesScreen> {
   final List<Note> _notes = [];
   bool _isLoading = false;
   final TextEditingController _textNoteController = TextEditingController();
+  late final String _notesStorageKey;
 
   @override
   void initState() {
     super.initState();
+    _notesStorageKey = 'notes_${widget.unit.folderId ?? 'temp'}';
     _loadNotes();
   }
 
-  void _loadNotes() {
-    // TODO: Load notes from SharedPreferences
-    setState(() {});
+  // Load notes from local storage
+  Future<void> _loadNotes() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String? notesJson = prefs.getString(_notesStorageKey);
+      
+      if (notesJson != null) {
+        final List<dynamic> jsonList = jsonDecode(notesJson);
+        setState(() {
+          _notes.clear();
+          _notes.addAll(jsonList.map((json) => Note.fromJson(json)).toList());
+        });
+        print("✅ Loaded ${_notes.length} notes from local storage");
+      }
+    } catch (e) {
+      print("Error loading notes: $e");
+    }
+  }
+
+  // Save notes to local storage
+  Future<void> _saveNotes() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String notesJson = jsonEncode(_notes.map((note) => note.toJson()).toList());
+      await prefs.setString(_notesStorageKey, notesJson);
+      print("✅ Saved ${_notes.length} notes to local storage");
+    } catch (e) {
+      print("Error saving notes: $e");
+    }
   }
 
   Future<void> _pickFile() async {
@@ -73,6 +104,8 @@ class _NotesScreenState extends State<NotesScreen> {
                 createdAt: DateTime.now(),
               ));
             });
+            
+            await _saveNotes();
             
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text('✅ $fileName uploaded'), backgroundColor: Colors.green),
@@ -116,6 +149,8 @@ class _NotesScreenState extends State<NotesScreen> {
                 createdAt: DateTime.now(),
               ));
             });
+            
+            await _saveNotes();
             
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text('✅ Image captured and uploaded'), backgroundColor: Colors.green),
@@ -162,6 +197,8 @@ class _NotesScreenState extends State<NotesScreen> {
           });
           
           _textNoteController.clear();
+          await _saveNotes();
+          
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('✅ Text note saved'), backgroundColor: Colors.green),
           );
@@ -179,7 +216,6 @@ class _NotesScreenState extends State<NotesScreen> {
   // Download file from Drive
   Future<File?> _downloadFromDrive(String fileName) async {
     try {
-      // Show loading
       if (!mounted) return null;
       
       showDialog(
@@ -190,14 +226,12 @@ class _NotesScreenState extends State<NotesScreen> {
         ),
       );
 
-      // Get Drive API
       final driveApi = await _driveService.getDriveApi();
       if (driveApi == null) {
         if (mounted) Navigator.pop(context);
         throw Exception('Not authenticated');
       }
 
-      // Search for the file in the current unit folder
       final searchResult = await driveApi.files.list(
         q: "name='$fileName' and '${widget.unit.folderId}' in parents and trashed=false",
         spaces: 'drive',
@@ -210,25 +244,21 @@ class _NotesScreenState extends State<NotesScreen> {
 
       final fileMetadata = searchResult.files!.first;
       
-      // Download the file
       final downloadDir = await getApplicationDocumentsDirectory();
       final downloadPath = '${downloadDir.path}/$fileName';
       final downloadFile = File(downloadPath);
 
-      // Download file content
       final response = await driveApi.files.get(
         fileMetadata.id!,
         downloadOptions: drive.DownloadOptions.fullMedia,
       );
 
-      // Check if response is Media type
       if (response is drive.Media) {
-        // Write to local file
         final sink = downloadFile.openWrite();
         await response.stream.pipe(sink);
         await sink.close();
         
-        if (mounted) Navigator.pop(context); // Close loading dialog
+        if (mounted) Navigator.pop(context);
         return downloadFile;
       } else {
         if (mounted) Navigator.pop(context);
@@ -236,7 +266,7 @@ class _NotesScreenState extends State<NotesScreen> {
       }
     } catch (e) {
       if (mounted) {
-        Navigator.pop(context); // Close loading dialog
+        Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Download failed: $e'), backgroundColor: Colors.red),
         );
@@ -247,10 +277,12 @@ class _NotesScreenState extends State<NotesScreen> {
 
   // View downloaded file
   Future<void> _viewDownloadedFile(File file, String fileName) async {
-    if (fileName.toLowerCase().endsWith('.jpg') ||
-        fileName.toLowerCase().endsWith('.jpeg') ||
-        fileName.toLowerCase().endsWith('.png')) {
-      // View image
+    String lowerName = fileName.toLowerCase();
+    
+    if (lowerName.endsWith('.jpg') ||
+        lowerName.endsWith('.jpeg') ||
+        lowerName.endsWith('.png')) {
+      // View image directly in app
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -270,73 +302,110 @@ class _NotesScreenState extends State<NotesScreen> {
           ),
         ),
       );
-    } else if (fileName.toLowerCase().endsWith('.txt')) {
-      // View text file
-      String content = await file.readAsString();
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text(fileName),
-          content: Container(
-            width: double.maxFinite,
-            height: 400,
-            child: SingleChildScrollView(
-              child: Text(content),
+    } else if (lowerName.endsWith('.txt')) {
+      // View text file directly in app
+      try {
+        String content = await file.readAsString();
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text(fileName),
+            content: Container(
+              width: double.maxFinite,
+              height: 400,
+              child: SingleChildScrollView(
+                child: Text(content),
+              ),
             ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Close'),
-            ),
-            TextButton(
-              onPressed: () async {
-                Navigator.pop(context);
-                await Share.shareXFiles([XFile(file.path)]);
-              },
-              child: const Text('Share'),
-            ),
-          ],
+        );
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error reading text file: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } else if (lowerName.endsWith('.pdf')) {
+      // View PDF in app using PDF viewer
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => PDFViewerScreen(
+            file: file,
+            fileName: fileName,
+          ),
         ),
       );
     } else {
-      // For PDFs and other files, open externally
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text(fileName),
-          content: const Text('How would you like to open this file?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
+      // For other files, show share options
+      _showFileOptions(file, fileName);
+    }
+  }
+
+  void _showFileOptions(File file, String fileName) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
-            TextButton(
-              onPressed: () async {
+            const SizedBox(height: 20),
+            ListTile(
+              leading: const Icon(Icons.picture_as_pdf, color: Colors.red),
+              title: Text(
+                fileName,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              subtitle: const Text('Choose how to open this file'),
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.share, color: Colors.blue),
+              title: const Text('Share file'),
+              subtitle: const Text('Send to other apps'),
+              onTap: () async {
                 Navigator.pop(context);
                 await Share.shareXFiles([XFile(file.path)]);
               },
-              child: const Text('Share'),
             ),
-            TextButton(
-              onPressed: () async {
+            ListTile(
+              leading: const Icon(Icons.open_in_browser, color: Colors.green),
+              title: const Text('Open with external app'),
+              subtitle: const Text('Open in PDF viewer or other app'),
+              onTap: () async {
                 Navigator.pop(context);
-                await launchUrl(
-                  Uri.file(file.path),
-                  mode: LaunchMode.externalApplication,
-                );
+                try {
+                  await Share.shareXFiles([XFile(file.path)]);
+                } catch (e) {
+                  await Share.shareXFiles([XFile(file.path)]);
+                }
               },
-              child: const Text('Open'),
             ),
           ],
         ),
-      );
-    }
+      ),
+    );
   }
 
   Future<void> _viewNote(Note note) async {
     try {
-      // For text notes created in-app
       if (note.content != null && note.content!.isNotEmpty) {
         showDialog(
           context: context,
@@ -360,7 +429,6 @@ class _NotesScreenState extends State<NotesScreen> {
         return;
       }
 
-      // For uploaded files, download from Drive
       final downloadedFile = await _downloadFromDrive(note.title);
       if (downloadedFile != null && mounted) {
         await _viewDownloadedFile(downloadedFile, note.title);
@@ -370,6 +438,36 @@ class _NotesScreenState extends State<NotesScreen> {
         SnackBar(content: Text('Error opening note: $e'), backgroundColor: Colors.red),
       );
     }
+  }
+
+  Future<void> _deleteNote(Note note) async {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Note'),
+        content: Text('Are you sure you want to delete "${note.title}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              setState(() {
+                _notes.remove(note);
+              });
+              await _saveNotes();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('✅ Note deleted'), backgroundColor: Colors.orange),
+              );
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -382,10 +480,15 @@ class _NotesScreenState extends State<NotesScreen> {
         ),
         backgroundColor: Colors.purple,
         foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _loadNotes,
+          ),
+        ],
       ),
       body: Column(
         children: [
-          // Input Section
           Card(
             margin: const EdgeInsets.all(16),
             elevation: 4,
@@ -403,7 +506,6 @@ class _NotesScreenState extends State<NotesScreen> {
                   ),
                   const SizedBox(height: 16),
                   
-                  // Text note input
                   TextField(
                     controller: _textNoteController,
                     maxLines: 3,
@@ -415,7 +517,6 @@ class _NotesScreenState extends State<NotesScreen> {
                   ),
                   const SizedBox(height: 8),
                   
-                  // Action buttons
                   Row(
                     children: [
                       Expanded(
@@ -461,7 +562,6 @@ class _NotesScreenState extends State<NotesScreen> {
             ),
           ),
           
-          // Notes List
           Expanded(
             child: _notes.isEmpty
                 ? Center(
@@ -504,44 +604,83 @@ class _NotesScreenState extends State<NotesScreen> {
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.all(12),
-                          leading: CircleAvatar(
-                            backgroundColor: note.content != null 
-                                ? Colors.blue.shade100 
-                                : Colors.green.shade100,
-                            child: Icon(
-                              note.content != null ? Icons.note : Icons.insert_drive_file,
-                              color: note.content != null ? Colors.blue : Colors.green,
+                        child: Dismissible(
+                          key: Key(note.id),
+                          direction: DismissDirection.endToStart,
+                          background: Container(
+                            alignment: Alignment.centerRight,
+                            padding: const EdgeInsets.only(right: 20),
+                            color: Colors.red,
+                            child: const Icon(Icons.delete, color: Colors.white),
+                          ),
+                          confirmDismiss: (direction) async {
+                            return await showDialog(
+                              context: context,
+                              builder: (context) => AlertDialog(
+                                title: const Text('Delete'),
+                                content: Text('Delete "${note.title}"?'),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(context, false),
+                                    child: const Text('Cancel'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(context, true),
+                                    style: TextButton.styleFrom(foregroundColor: Colors.red),
+                                    child: const Text('Delete'),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                          onDismissed: (direction) async {
+                            setState(() {
+                              _notes.removeAt(index);
+                            });
+                            await _saveNotes();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('${note.title} deleted')),
+                            );
+                          },
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.all(12),
+                            leading: CircleAvatar(
+                              backgroundColor: note.content != null 
+                                  ? Colors.blue.shade100 
+                                  : Colors.green.shade100,
+                              child: Icon(
+                                note.content != null ? Icons.note : Icons.insert_drive_file,
+                                color: note.content != null ? Colors.blue : Colors.green,
+                              ),
                             ),
+                            title: Text(
+                              note.title,
+                              style: const TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                            subtitle: Text(
+                              'Added: ${note.createdAt.toString().split('.').first}',
+                              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                            ),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.visibility, color: Colors.blue),
+                                  onPressed: () => _viewNote(note),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.share, color: Colors.green),
+                                  onPressed: () async {
+                                    final file = await _downloadFromDrive(note.title);
+                                    if (file != null) {
+                                      await Share.shareXFiles([XFile(file.path)]);
+                                    }
+                                  },
+                                ),
+                              ],
+                            ),
+                            onTap: () => _viewNote(note),
                           ),
-                          title: Text(
-                            note.title,
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          subtitle: Text(
-                            'Added: ${note.createdAt.toString().split('.').first}',
-                            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                          ),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.visibility, color: Colors.blue),
-                                onPressed: () => _viewNote(note),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.share, color: Colors.green),
-                                onPressed: () async {
-                                  final file = await _downloadFromDrive(note.title);
-                                  if (file != null) {
-                                    await Share.shareXFiles([XFile(file.path)]);
-                                  }
-                                },
-                              ),
-                            ],
-                          ),
-                          onTap: () => _viewNote(note),
                         ),
                       );
                     },

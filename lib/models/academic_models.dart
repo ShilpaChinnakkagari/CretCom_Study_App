@@ -74,6 +74,24 @@ class Note {
     this.content,
     required this.createdAt,
   });
+
+  // Convert Note to JSON for storage
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'title': title,
+    'fileId': fileId,
+    'content': content,
+    'createdAt': createdAt.toIso8601String(),
+  };
+
+  // Create Note from JSON
+  factory Note.fromJson(Map<String, dynamic> json) => Note(
+    id: json['id'],
+    title: json['title'],
+    fileId: json['fileId'],
+    content: json['content'],
+    createdAt: DateTime.parse(json['createdAt']),
+  );
 }
 
 class QuestionBank {

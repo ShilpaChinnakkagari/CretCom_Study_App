@@ -8,7 +8,7 @@ plugins {
 android {
     namespace = "com.shilpa.study_app"
     compileSdk = 35
-    ndkVersion = "26.1.10909125"
+    ndkVersion = "27.0.12077973"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -22,8 +22,7 @@ android {
     defaultConfig {
         applicationId = "com.shilpa.study_app"
         minSdk = 23
-        targetSdk = 34
-        // HARDCODE the version temporarily
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0"
     }
