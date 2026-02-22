@@ -15,6 +15,16 @@ class DriveService {
     return await _authService.getDriveApi();
   }
 
+  // Check if folder is synced
+  bool isFolderSynced(String key) {
+    return _folderIds.containsKey(key);
+  }
+
+  // Get all synced folders
+  Map<String, String> getAllSyncedFolders() {
+    return Map.from(_folderIds);
+  }
+
   // Initialize app folder structure
   Future<bool> initializeAppFolder() async {
     try {

@@ -27,13 +27,17 @@ class _UnitScreenState extends State<UnitScreen> {
   final DriveService _driveService = DriveService();
   final List<Unit> _units = [];
   bool _isLoading = true;
-  
-  // Default units (user doesn't need to create them)
   final List<String> _defaultUnits = ['I', 'II', 'III', 'IV', 'V'];
+  
+  late final String _baseKey;
 
   @override
   void initState() {
     super.initState();
+    // Use subject folder ID as base key - this NEVER changes!
+    _baseKey = 'units_${widget.subject.folderId ?? widget.subject.id}';
+    print("🔑 Unit base key: $_baseKey");
+    print("📁 Subject folder ID: ${widget.subject.folderId}");
     _loadUnits();
   }
 
@@ -43,85 +47,96 @@ class _UnitScreenState extends State<UnitScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       
-      // Check if units were already created
-      bool unitsCreated = prefs.getBool('units_created_${widget.subject.id}') ?? false;
+      // Clear existing list
+      _units.clear();
       
-      if (!unitsCreated) {
-        // Auto-create all default units
-        await _createAllDefaultUnits();
-        await prefs.setBool('units_created_${widget.subject.id}', true);
-      } else {
-        // Load existing unit folder IDs
-        for (int i = 0; i < _defaultUnits.length; i++) {
-          String unitNum = _defaultUnits[i];
-          String? folderId = prefs.getString('unit_${widget.subject.id}_$unitNum');
-          
+      // Check if units were already created for this subject
+      bool unitsCreated = prefs.getBool('${_baseKey}_created') ?? false;
+      print("📊 Units already created: $unitsCreated");
+      
+      for (String unitNum in _defaultUnits) {
+        String key = '${_baseKey}_$unitNum';
+        String? folderId = prefs.getString(key);
+        
+        if (folderId != null && folderId.isNotEmpty) {
+          // Unit exists - add to list
           _units.add(Unit(
-            id: '${i + 1}',
+            id: unitNum,
             name: 'Unit $unitNum',
             folderId: folderId,
           ));
+          print("✅ Loaded Unit $unitNum with folder: $folderId");
+        } else {
+          // Unit doesn't exist yet
+          _units.add(Unit(
+            id: unitNum,
+            name: 'Unit $unitNum',
+            folderId: null,
+          ));
         }
       }
+      
+      // Only auto-create if NO units have folder IDs AND subject has folder
+      bool hasAnySynced = _units.any((u) => u.folderId != null);
+      
+      if (!hasAnySynced && widget.subject.folderId != null && !unitsCreated) {
+        print("📁 Auto-creating all units for subject: ${widget.subject.name}");
+        await _createAllUnits(prefs);
+        await prefs.setBool('${_baseKey}_created', true);
+      } else {
+        print("✅ Using existing units - no auto-creation needed");
+      }
+      
     } catch (e) {
-      print("Error loading units: $e");
+      print("❌ Error loading units: $e");
     } finally {
       setState(() => _isLoading = false);
     }
   }
 
-  Future<void> _createAllDefaultUnits() async {
-    if (widget.subject.folderId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please sync subject first')),
-      );
-      return;
-    }
-
-    setState(() => _isLoading = true);
-    final prefs = await SharedPreferences.getInstance();
-
-    try {
-      for (int i = 0; i < _defaultUnits.length; i++) {
-        String unitNum = _defaultUnits[i];
-        
-        // Create folder in Drive
+  Future<void> _createAllUnits(SharedPreferences prefs) async {
+    int createdCount = 0;
+    
+    for (String unitNum in _defaultUnits) {
+      try {
+        print("📁 Creating Unit $unitNum...");
         final folderId = await _driveService.createUnitFolder(
           unitNum, 
           widget.subject.folderId!
         );
-
+        
         if (folderId != null) {
-          // Save to SharedPreferences
-          await prefs.setString('unit_${widget.subject.id}_$unitNum', folderId);
+          String key = '${_baseKey}_$unitNum';
+          await prefs.setString(key, folderId);
           
-          _units.add(Unit(
-            id: '${i + 1}',
-            name: 'Unit $unitNum',
-            folderId: folderId,
-          ));
+          // Update the unit in the list
+          int index = _units.indexWhere((u) => u.id == unitNum);
+          if (index != -1) {
+            _units[index] = Unit(
+              id: unitNum,
+              name: 'Unit $unitNum',
+              folderId: folderId,
+            );
+          }
           
-          print("✅ Auto-created Unit $unitNum");
+          createdCount++;
+          print("✅ Created Unit $unitNum with folder: $folderId");
         }
+      } catch (e) {
+        print("❌ Failed to create Unit $unitNum: $e");
       }
-
+    }
+    
+    if (createdCount > 0 && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('✅ All units auto-created successfully'),
+        SnackBar(
+          content: Text('✅ $createdCount units ready'),
           backgroundColor: Colors.green,
         ),
       );
-    } catch (e) {
-      print("Error creating units: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error creating units: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    } finally {
-      setState(() => _isLoading = false);
     }
+    
+    setState(() {}); // Refresh UI
   }
 
   @override
@@ -142,7 +157,7 @@ class _UnitScreenState extends State<UnitScreen> {
                 children: [
                   CircularProgressIndicator(),
                   SizedBox(height: 20),
-                  Text('Auto-creating units...'),
+                  Text('Loading units...'),
                 ],
               ),
             )
@@ -151,6 +166,8 @@ class _UnitScreenState extends State<UnitScreen> {
               itemCount: _units.length,
               itemBuilder: (context, index) {
                 final unit = _units[index];
+                bool isSynced = unit.folderId != null && unit.folderId!.isNotEmpty;
+                
                 return Card(
                   margin: const EdgeInsets.only(bottom: 12),
                   elevation: 2,
@@ -162,93 +179,98 @@ class _UnitScreenState extends State<UnitScreen> {
                       ListTile(
                         contentPadding: const EdgeInsets.all(12),
                         leading: CircleAvatar(
-                          backgroundColor: Colors.purple.shade100,
+                          backgroundColor: isSynced 
+                              ? Colors.purple.shade100 
+                              : Colors.grey.shade200,
                           radius: 25,
                           child: Text(
                             unit.name.replaceAll('Unit ', ''),
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
-                              color: Colors.purple.shade700,
+                              color: isSynced 
+                                  ? Colors.purple.shade700 
+                                  : Colors.grey.shade600,
                             ),
                           ),
                         ),
                         title: Text(
                           unit.name,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
+                            color: isSynced ? Colors.black : Colors.grey.shade600,
                           ),
                         ),
                         subtitle: Padding(
                           padding: const EdgeInsets.only(top: 4),
                           child: Text(
-                            unit.folderId == null 
-                                ? '⏳ Not synced' 
-                                : '✅ Synced to Drive',
+                            isSynced 
+                                ? '✅ Permanently synced' 
+                                : '⏳ Not synced',
                             style: TextStyle(
-                              color: unit.folderId == null 
-                                  ? Colors.orange 
-                                  : Colors.green,
+                              color: isSynced ? Colors.green : Colors.orange,
                               fontSize: 12,
                             ),
                           ),
                         ),
-                        trailing: PopupMenuButton(
-                          icon: const Icon(Icons.more_vert, color: Colors.purple),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          itemBuilder: (context) => [
-                            const PopupMenuItem(
-                              value: 'notes',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.note, size: 20, color: Colors.blue),
-                                  SizedBox(width: 8),
-                                  Text('Notes', style: TextStyle(fontSize: 14)),
-                                ],
-                              ),
-                            ),
-                            const PopupMenuItem(
-                              value: 'questions',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.question_answer, size: 20, color: Colors.green),
-                                  SizedBox(width: 8),
-                                  Text('Question Bank', style: TextStyle(fontSize: 14)),
-                                ],
-                              ),
-                            ),
-                          ],
-                          onSelected: (value) {
-                            if (value == 'notes') {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => NotesScreen(
-                                    year: widget.year,
-                                    semester: widget.semester,
-                                    subject: widget.subject,
-                                    unit: unit,
-                                  ),
+                        trailing: isSynced
+                            ? PopupMenuButton(
+                                icon: const Icon(Icons.more_vert, color: Colors.purple),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
-                              );
-                            } else if (value == 'questions') {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => QuestionBankScreen(
-                                    year: widget.year,
-                                    semester: widget.semester,
-                                    subject: widget.subject,
-                                    unit: unit,
+                                itemBuilder: (context) => [
+                                  const PopupMenuItem(
+                                    value: 'notes',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.note, size: 20, color: Colors.blue),
+                                        SizedBox(width: 8),
+                                        Text('Notes', style: TextStyle(fontSize: 14)),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                              );
-                            }
-                          },
-                        ),
+                                  const PopupMenuItem(
+                                    value: 'questions',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.question_answer, size: 20, color: Colors.green),
+                                        SizedBox(width: 8),
+                                        Text('Question Bank', style: TextStyle(fontSize: 14)),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                                onSelected: (value) {
+                                  if (value == 'notes') {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => NotesScreen(
+                                          year: widget.year,
+                                          semester: widget.semester,
+                                          subject: widget.subject,
+                                          unit: unit,
+                                        ),
+                                      ),
+                                    );
+                                  } else if (value == 'questions') {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => QuestionBankScreen(
+                                          year: widget.year,
+                                          semester: widget.semester,
+                                          subject: widget.subject,
+                                          unit: unit,
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                },
+                              )
+                            : const SizedBox(width: 40), // Empty space when not synced
                       ),
                     ],
                   ),

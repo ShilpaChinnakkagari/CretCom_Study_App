@@ -79,17 +79,13 @@ class _YearScreenState extends State<YearScreen> {
         ];
       }
       
-      // Load saved folder IDs safely
+      // Load saved folder IDs - PERMANENT storage
       for (var year in _years) {
         String key = 'year_${year.id}_${widget.academicType}';
-        if (prefs.containsKey(key)) {
-          var value = prefs.get(key);
-          if (value is String) {
-            year.folderId = value;
-          } else {
-            // If it's not a String, it's corrupted - remove it
-            prefs.remove(key);
-          }
+        String? savedId = prefs.getString(key);
+        if (savedId != null && savedId.isNotEmpty) {
+          year.folderId = savedId;
+          print("✅ Loaded Year ${year.name} from permanent storage: $savedId");
         }
       }
     });
@@ -132,15 +128,15 @@ class _YearScreenState extends State<YearScreen> {
           year.folderId = folderId;
         });
         
-        // Save to SharedPreferences
+        // Save to SharedPreferences PERMANENTLY
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('year_${year.id}_${widget.academicType}', folderId);
         
-        print("✅ Year folder created: $folderId");
+        print("✅ Year folder created and saved permanently: $folderId");
         
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('✅ Year ${year.name} folder created in Drive'),
+            content: Text('✅ Year ${year.name} permanently synced'),
             backgroundColor: Colors.green,
           ),
         );
@@ -237,7 +233,7 @@ class _YearScreenState extends State<YearScreen> {
                         subtitle: Text(
                           year.folderId == null 
                               ? '⏳ Not synced to Drive' 
-                              : '✅ Synced to Drive',
+                              : '✅ Permanently synced',
                           style: TextStyle(
                             color: year.folderId == null 
                                 ? Colors.orange 

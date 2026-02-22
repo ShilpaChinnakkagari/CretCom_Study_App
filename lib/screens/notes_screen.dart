@@ -10,7 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:shilpa_study_app/screens/pdf_viewer_screen.dart'; // ADD THIS
+import 'package:flutter_pdfview/flutter_pdfview.dart';
 
 class NotesScreen extends StatefulWidget {
   final AcademicYear year;
@@ -40,7 +40,10 @@ class _NotesScreenState extends State<NotesScreen> {
   @override
   void initState() {
     super.initState();
-    _notesStorageKey = 'notes_${widget.unit.folderId ?? 'temp'}';
+    // Use unit folder ID as permanent key - this NEVER changes
+    _notesStorageKey = 'notes_${widget.unit.folderId ?? widget.unit.id}';
+    print("📝 Notes storage key: $_notesStorageKey");  // ← This should show the same key every time
+    print("📁 Unit folder ID: ${widget.unit.folderId}");  // ← This should NOT be null
     _loadNotes();
   }
 
@@ -50,13 +53,15 @@ class _NotesScreenState extends State<NotesScreen> {
       final prefs = await SharedPreferences.getInstance();
       final String? notesJson = prefs.getString(_notesStorageKey);
       
-      if (notesJson != null) {
+      if (notesJson != null && notesJson.isNotEmpty) {
         final List<dynamic> jsonList = jsonDecode(notesJson);
         setState(() {
           _notes.clear();
           _notes.addAll(jsonList.map((json) => Note.fromJson(json)).toList());
         });
-        print("✅ Loaded ${_notes.length} notes from local storage");
+        print("✅ Loaded ${_notes.length} notes from permanent storage");
+      } else {
+        print("📝 No notes found in storage");
       }
     } catch (e) {
       print("Error loading notes: $e");
@@ -69,7 +74,7 @@ class _NotesScreenState extends State<NotesScreen> {
       final prefs = await SharedPreferences.getInstance();
       final String notesJson = jsonEncode(_notes.map((note) => note.toJson()).toList());
       await prefs.setString(_notesStorageKey, notesJson);
-      print("✅ Saved ${_notes.length} notes to local storage");
+      print("✅ Saved ${_notes.length} notes to permanent storage");
     } catch (e) {
       print("Error saving notes: $e");
     }
@@ -105,7 +110,7 @@ class _NotesScreenState extends State<NotesScreen> {
               ));
             });
             
-            await _saveNotes();
+            await _saveNotes(); // Save to permanent storage
             
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text('✅ $fileName uploaded'), backgroundColor: Colors.green),
@@ -150,7 +155,7 @@ class _NotesScreenState extends State<NotesScreen> {
               ));
             });
             
-            await _saveNotes();
+            await _saveNotes(); // Save to permanent storage
             
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text('✅ Image captured and uploaded'), backgroundColor: Colors.green),
@@ -197,7 +202,7 @@ class _NotesScreenState extends State<NotesScreen> {
           });
           
           _textNoteController.clear();
-          await _saveNotes();
+          await _saveNotes(); // Save to permanent storage
           
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('✅ Text note saved'), backgroundColor: Colors.green),
@@ -335,77 +340,26 @@ class _NotesScreenState extends State<NotesScreen> {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => PDFViewerScreen(
-            file: file,
-            fileName: fileName,
+          builder: (context) => Scaffold(
+            appBar: AppBar(
+              title: Text(fileName),
+              backgroundColor: Colors.red,
+            ),
+            body: PDFView(
+              filePath: file.path,
+            ),
           ),
         ),
       );
     } else {
-      // For other files, show share options
-      _showFileOptions(file, fileName);
+      // For other files, share
+      await Share.shareXFiles([XFile(file.path)]);
     }
-  }
-
-  void _showFileOptions(File file, String fileName) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 20),
-            ListTile(
-              leading: const Icon(Icons.picture_as_pdf, color: Colors.red),
-              title: Text(
-                fileName,
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              subtitle: const Text('Choose how to open this file'),
-            ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.share, color: Colors.blue),
-              title: const Text('Share file'),
-              subtitle: const Text('Send to other apps'),
-              onTap: () async {
-                Navigator.pop(context);
-                await Share.shareXFiles([XFile(file.path)]);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.open_in_browser, color: Colors.green),
-              title: const Text('Open with external app'),
-              subtitle: const Text('Open in PDF viewer or other app'),
-              onTap: () async {
-                Navigator.pop(context);
-                try {
-                  await Share.shareXFiles([XFile(file.path)]);
-                } catch (e) {
-                  await Share.shareXFiles([XFile(file.path)]);
-                }
-              },
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   Future<void> _viewNote(Note note) async {
     try {
+      // For text notes created in-app
       if (note.content != null && note.content!.isNotEmpty) {
         showDialog(
           context: context,
@@ -429,6 +383,7 @@ class _NotesScreenState extends State<NotesScreen> {
         return;
       }
 
+      // For uploaded files, download from Drive
       final downloadedFile = await _downloadFromDrive(note.title);
       if (downloadedFile != null && mounted) {
         await _viewDownloadedFile(downloadedFile, note.title);
@@ -484,11 +439,13 @@ class _NotesScreenState extends State<NotesScreen> {
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadNotes,
+            tooltip: 'Refresh',
           ),
         ],
       ),
       body: Column(
         children: [
+          // Input Section
           Card(
             margin: const EdgeInsets.all(16),
             elevation: 4,
@@ -506,6 +463,7 @@ class _NotesScreenState extends State<NotesScreen> {
                   ),
                   const SizedBox(height: 16),
                   
+                  // Text note input
                   TextField(
                     controller: _textNoteController,
                     maxLines: 3,
@@ -517,6 +475,7 @@ class _NotesScreenState extends State<NotesScreen> {
                   ),
                   const SizedBox(height: 8),
                   
+                  // Action buttons
                   Row(
                     children: [
                       Expanded(
@@ -562,6 +521,7 @@ class _NotesScreenState extends State<NotesScreen> {
             ),
           ),
           
+          // Notes List
           Expanded(
             child: _notes.isEmpty
                 ? Center(
