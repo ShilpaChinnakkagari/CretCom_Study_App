@@ -10,7 +10,7 @@ class DriveService {
   // Store folder IDs locally
   final Map<String, String> _folderIds = {};
 
-  // Add this NEW method
+  // Get Drive API
   Future<drive.DriveApi?> getDriveApi() async {
     return await _authService.getDriveApi();
   }
@@ -24,7 +24,7 @@ class DriveService {
         return false;
       }
 
-      // Load saved folder IDs
+      // Load saved folder IDs safely
       await _loadFolderIds();
 
       // Check if main app folder exists
@@ -157,18 +157,46 @@ class DriveService {
 
   // Save folder IDs locally
   Future<void> _saveFolderIds() async {
-    final prefs = await SharedPreferences.getInstance();
-    _folderIds.forEach((key, value) {
-      prefs.setString(key, value);
-    });
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _folderIds.forEach((key, value) {
+        prefs.setString(key, value);
+      });
+    } catch (e) {
+      print('❌ Error saving folder IDs: $e');
+    }
   }
 
-  // Load folder IDs
+  // Load folder IDs safely
   Future<void> _loadFolderIds() async {
-    final prefs = await SharedPreferences.getInstance();
-    final keys = prefs.getKeys();
-    for (String key in keys) {
-      _folderIds[key] = prefs.getString(key)!;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final keys = prefs.getKeys();
+      
+      _folderIds.clear();
+      
+      for (String key in keys) {
+        // Only load string values that look like folder IDs
+        if (key.startsWith('year_') || 
+            key.startsWith('semester_') || 
+            key.startsWith('subject_') || 
+            key.startsWith('unit_') || 
+            key == 'root') {
+          
+          var value = prefs.get(key);
+          if (value is String) {
+            _folderIds[key] = value;
+          } else {
+            // Remove corrupted data
+            prefs.remove(key);
+            print("🧹 Removed corrupted data for key: $key");
+          }
+        }
+      }
+      
+      print("✅ Loaded ${_folderIds.length} folder IDs");
+    } catch (e) {
+      print('❌ Error loading folder IDs: $e');
     }
   }
 

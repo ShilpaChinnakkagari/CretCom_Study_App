@@ -157,19 +157,3 @@ class Question {
     marks: json['marks'],
   );
 }
-
-class Question {
-  String id;
-  String question;
-  String? answer;
-  List<String> imageFileIds; // Google Drive image IDs
-  int marks;
-
-  Question({
-    required this.id,
-    required this.question,
-    this.answer,
-    this.imageFileIds = const [],
-    required this.marks,
-  });
-}

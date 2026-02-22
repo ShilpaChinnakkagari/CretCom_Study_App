@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shilpa_study_app/models/academic_models.dart';
 import 'package:shilpa_study_app/services/drive_service.dart';
 import 'semester_screen.dart';
-
 
 class YearScreen extends StatefulWidget {
   final String academicType; // "UG" or "PG"
@@ -38,8 +38,7 @@ class _YearScreenState extends State<YearScreen> {
       
       if (initialized) {
         print("✅ Root folder initialized successfully");
-        // Load saved folder IDs from DriveService
-        _loadYears();
+        await _loadSavedYears();
       } else {
         print("❌ Failed to initialize root folder");
         ScaffoldMessenger.of(context).showSnackBar(
@@ -48,46 +47,51 @@ class _YearScreenState extends State<YearScreen> {
             backgroundColor: Colors.orange,
           ),
         );
-        // Still load years even if Drive fails
-        _loadYears();
+        _loadSavedYears();
       }
     } catch (e) {
       print("❌ Error initializing Drive: $e");
-      _loadYears();
+      _loadSavedYears();
     } finally {
       setState(() {
         _isInitializing = false;
+        _isLoading = false;
       });
     }
   }
 
-  void _loadYears() {
-    // Create years based on academic type
-    List<AcademicYear> years = [];
-    if (widget.academicType == "UG") {
-      years = [
-        AcademicYear(id: '1', name: 'I', type: 'UG'),
-        AcademicYear(id: '2', name: 'II', type: 'UG'),
-        AcademicYear(id: '3', name: 'III', type: 'UG'),
-        AcademicYear(id: '4', name: 'IV', type: 'UG'),
-      ];
-    } else {
-      years = [
-        AcademicYear(id: '1', name: 'I', type: 'PG'),
-        AcademicYear(id: '2', name: 'II', type: 'PG'),
-      ];
-    }
+  Future<void> _loadSavedYears() async {
+    final prefs = await SharedPreferences.getInstance();
     
-    // Try to load saved folder IDs from SharedPreferences
-    _loadSavedFolderIds(years);
-  }
-
-  Future<void> _loadSavedFolderIds(List<AcademicYear> years) async {
-    // In a real app, you'd load from SharedPreferences
-    // For now, we'll just set the years
     setState(() {
-      _years = years;
-      _isLoading = false;
+      // Create years based on academic type
+      if (widget.academicType == "UG") {
+        _years = [
+          AcademicYear(id: '1', name: 'I', type: 'UG'),
+          AcademicYear(id: '2', name: 'II', type: 'UG'),
+          AcademicYear(id: '3', name: 'III', type: 'UG'),
+          AcademicYear(id: '4', name: 'IV', type: 'UG'),
+        ];
+      } else {
+        _years = [
+          AcademicYear(id: '1', name: 'I', type: 'PG'),
+          AcademicYear(id: '2', name: 'II', type: 'PG'),
+        ];
+      }
+      
+      // Load saved folder IDs safely
+      for (var year in _years) {
+        String key = 'year_${year.id}_${widget.academicType}';
+        if (prefs.containsKey(key)) {
+          var value = prefs.get(key);
+          if (value is String) {
+            year.folderId = value;
+          } else {
+            // If it's not a String, it's corrupted - remove it
+            prefs.remove(key);
+          }
+        }
+      }
     });
   }
 
@@ -127,6 +131,10 @@ class _YearScreenState extends State<YearScreen> {
         setState(() {
           year.folderId = folderId;
         });
+        
+        // Save to SharedPreferences
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('year_${year.id}_${widget.academicType}', folderId);
         
         print("✅ Year folder created: $folderId");
         
