@@ -1,0 +1,76 @@
+{
+  "project_info": {
+    "project_number": "603821450421",
+    "project_id": "shilpa-study-app",
+    "storage_bucket": "shilpa-study-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:603821450421:android:181806a15f041c06554afc",
+        "android_client_info": {
+          "package_name": "com.example.shilpa_study_app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "603821450421-65n4lf3i781fmrh69119g9r5iormedku.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC6h-769iA-nYarPZJY07TK1j34t44asYU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "603821450421-65n4lf3i781fmrh69119g9r5iormedku.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:603821450421:android:a342dca7021a7038554afc",
+        "android_client_info": {
+          "package_name": "com.shilpa.study_app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "603821450421-befc7uvhbood5s6044dg0va8f79ntqte.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.shilpa.study_app",
+            "certificate_hash": "0a0a5470d42dec2179fe9689b4cc5028ee6eb24c"
+          }
+        },
+        {
+          "client_id": "603821450421-65n4lf3i781fmrh69119g9r5iormedku.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC6h-769iA-nYarPZJY07TK1j34t44asYU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "603821450421-65n4lf3i781fmrh69119g9r5iormedku.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

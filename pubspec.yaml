@@ -1,0 +1,46 @@
+name: shilpa_study_app
+description: A study app that stores everything in Google Drive
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # Firebase - Use stable versions that work together
+  firebase_core: ^2.24.2
+  firebase_auth: ^4.16.0
+  
+  # Google Sign In
+  google_sign_in: ^6.1.5
+  
+  # Google Drive API
+  googleapis: ^11.4.0  # Older stable version
+  googleapis_auth: ^1.4.0
+  extension_google_sign_in_as_googleapis_auth: ^2.0.12
+  
+  # File picker - Use version without platform warnings
+  file_picker: ^5.5.0  # Older stable version
+  
+  # Images
+  image_picker: ^1.0.4
+  
+  # Local storage
+  shared_preferences: ^2.2.2
+  
+  # Permissions
+  permission_handler: ^11.0.1
+  http: ^1.6.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/google_logo.png
