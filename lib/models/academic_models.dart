@@ -106,6 +106,56 @@ class QuestionBank {
     this.questions = const [],
     this.folderId,
   });
+
+  // Convert to JSON for storage
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'title': title,
+    'folderId': folderId,
+    'questions': questions.map((q) => q.toJson()).toList(),
+  };
+
+  // Create from JSON
+  factory QuestionBank.fromJson(Map<String, dynamic> json) => QuestionBank(
+    id: json['id'],
+    title: json['title'],
+    folderId: json['folderId'],
+    questions: (json['questions'] as List)
+        .map((q) => Question.fromJson(q))
+        .toList(),
+  );
+}
+
+class Question {
+  String id;
+  String question;
+  String? answer;
+  List<String> imageFileIds; // Google Drive image IDs
+  int marks;
+
+  Question({
+    required this.id,
+    required this.question,
+    this.answer,
+    this.imageFileIds = const [],
+    required this.marks,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'question': question,
+    'answer': answer,
+    'imageFileIds': imageFileIds,
+    'marks': marks,
+  };
+
+  factory Question.fromJson(Map<String, dynamic> json) => Question(
+    id: json['id'],
+    question: json['question'],
+    answer: json['answer'],
+    imageFileIds: List<String>.from(json['imageFileIds']),
+    marks: json['marks'],
+  );
 }
 
 class Question {
