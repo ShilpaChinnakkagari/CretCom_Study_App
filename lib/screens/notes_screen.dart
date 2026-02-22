@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shilpa_study_app/models/academic_models.dart';
 import 'package:shilpa_study_app/services/drive_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class NotesScreen extends StatefulWidget {
   final AcademicYear year;
@@ -36,14 +37,16 @@ class _NotesScreenState extends State<NotesScreen> {
   }
 
   void _loadNotes() {
-    // TODO: Load notes from SharedPreferences or Drive
+    // TODO: Load notes from SharedPreferences
+    // For now, we'll just show empty list
+    setState(() {});
   }
 
   Future<void> _pickFile() async {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['pdf', 'doc', 'docx', 'txt'],
+        allowedExtensions: ['pdf', 'doc', 'docx', 'txt', 'jpg', 'jpeg', 'png'],
       );
 
       if (result != null) {
@@ -149,7 +152,7 @@ class _NotesScreenState extends State<NotesScreen> {
           setState(() {
             _notes.add(Note(
               id: DateTime.now().toString(),
-              title: 'Text Note',
+              title: 'Text Note - ${DateTime.now().toString().split(' ')[0]}',
               content: _textNoteController.text,
               fileId: widget.unit.folderId,
               createdAt: DateTime.now(),
@@ -171,18 +174,90 @@ class _NotesScreenState extends State<NotesScreen> {
     }
   }
 
+  Future<void> _viewNote(Note note) async {
+    try {
+      // For text notes, show in a dialog
+      if (note.content != null && note.content!.isNotEmpty) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text(note.title),
+            content: Container(
+              width: double.maxFinite,
+              height: 400,
+              child: SingleChildScrollView(
+                child: Text(note.content!),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'),
+              ),
+            ],
+          ),
+        );
+      } else {
+        // For files, we need to get a download link from Drive
+        // Since we can't directly open files, show options
+        showModalBottomSheet(
+          context: context,
+          builder: (context) => Container(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.open_in_browser, color: Colors.blue),
+                  title: const Text('Open in Google Drive'),
+                  onTap: () async {
+                    Navigator.pop(context);
+                    // In a real app, you'd construct the Drive URL
+                    // For now, show coming soon
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Opening in Drive - Coming soon!')),
+                    );
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.share, color: Colors.green),
+                  title: const Text('Share'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Share - Coming soon!')),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error opening note: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text('${widget.unit.name} - Notes'),
         backgroundColor: Colors.purple,
+        foregroundColor: Colors.white,
       ),
       body: Column(
         children: [
           // Input Section
           Card(
             margin: const EdgeInsets.all(16),
+            elevation: 4,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -201,6 +276,7 @@ class _NotesScreenState extends State<NotesScreen> {
                     decoration: const InputDecoration(
                       labelText: 'Write your note...',
                       border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.edit),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -215,6 +291,7 @@ class _NotesScreenState extends State<NotesScreen> {
                           label: const Text('Save Text'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.blue,
+                            foregroundColor: Colors.white,
                           ),
                         ),
                       ),
@@ -226,6 +303,7 @@ class _NotesScreenState extends State<NotesScreen> {
                           label: const Text('Upload File'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.green,
+                            foregroundColor: Colors.white,
                           ),
                         ),
                       ),
@@ -240,6 +318,7 @@ class _NotesScreenState extends State<NotesScreen> {
                       label: const Text('Capture Image'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.orange,
+                        foregroundColor: Colors.white,
                       ),
                     ),
                   ),
@@ -251,11 +330,33 @@ class _NotesScreenState extends State<NotesScreen> {
           // Notes List
           Expanded(
             child: _notes.isEmpty
-                ? const Center(
-                    child: Text(
-                      'No notes yet.\nAdd your first note above!',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 16, color: Colors.grey),
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.note_alt,
+                          size: 64,
+                          color: Colors.grey.shade400,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'No notes yet',
+                          style: TextStyle(
+                            fontSize: 18,
+                            color: Colors.grey.shade600,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Add your first note above!',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey.shade500,
+                          ),
+                        ),
+                      ],
                     ),
                   )
                 : ListView.builder(
@@ -265,22 +366,43 @@ class _NotesScreenState extends State<NotesScreen> {
                       final note = _notes[index];
                       return Card(
                         margin: const EdgeInsets.only(bottom: 8),
+                        elevation: 2,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         child: ListTile(
+                          contentPadding: const EdgeInsets.all(12),
                           leading: CircleAvatar(
-                            backgroundColor: Colors.purple.shade100,
+                            backgroundColor: note.content != null 
+                                ? Colors.blue.shade100 
+                                : Colors.green.shade100,
                             child: Icon(
                               note.content != null ? Icons.note : Icons.insert_drive_file,
-                              color: Colors.purple,
+                              color: note.content != null ? Colors.blue : Colors.green,
                             ),
                           ),
-                          title: Text(note.title),
+                          title: Text(
+                            note.title,
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
                           subtitle: Text(
                             'Added: ${note.createdAt.toString().split('.').first}',
+                            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                           ),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.cloud_done, color: Colors.green),
-                            onPressed: () {},
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.visibility, color: Colors.blue),
+                                onPressed: () => _viewNote(note),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.cloud_done, color: Colors.green),
+                                onPressed: () {},
+                              ),
+                            ],
                           ),
+                          onTap: () => _viewNote(note),
                         ),
                       );
                     },
