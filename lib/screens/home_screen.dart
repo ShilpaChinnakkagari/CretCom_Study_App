@@ -21,7 +21,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
   final AuthService _authService = AuthService();
   final DriveService _driveService = DriveService();
   UserProfile? _userProfile;
@@ -32,12 +32,44 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _navigateYear;
   String? _navigateSemester;
   Map<String, dynamic>? _navigateSubject;
+  
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
+  late Animation<Offset> _slideAnimation;
 
   @override
   void initState() {
     super.initState();
+    
+    // Setup animations
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
+    
+    _fadeAnimation = CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeIn,
+    );
+    
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0.3),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeOut,
+    ));
+    
+    _animationController.forward();
+    
     _loadUserProfile();
     _loadAllSubjects();
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadUserProfile() async {
@@ -128,7 +160,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   String unitFolderId = rsUnitFolders[unit]!;
                   int notesCount = 0;
                   
-                  // Get notes count
                   String notesKey = 'notes_$unitFolderId';
                   String? notesJson = prefs.getString(notesKey);
                   if (notesJson != null && notesJson.isNotEmpty) {
@@ -154,7 +185,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   String unitFolderId = knownUnitFolders[subjectFolderId]![unit]!;
                   int notesCount = 0;
                   
-                  // Get notes count
                   String notesKey = 'notes_$unitFolderId';
                   String? notesJson = prefs.getString(notesKey);
                   if (notesJson != null && notesJson.isNotEmpty) {
@@ -178,7 +208,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   String? unitFolderId;
                   int notesCount = 0;
                   
-                  // Try multiple key patterns
                   List<String> possibleKeys = [
                     'unit_${subjectFolderId}_$unit',
                     'units_${subjectFolderId}_$unit',
@@ -197,7 +226,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     }
                   }
                   
-                  // Get notes count
                   if (unitFolderId != null && unitFolderId.isNotEmpty) {
                     String notesKey = 'notes_$unitFolderId';
                     String? notesJson = prefs.getString(notesKey);
@@ -318,7 +346,7 @@ class _HomeScreenState extends State<HomeScreen> {
         print("🔄 Changes detected, reloading subjects...");
         await _loadAllSubjects();
         if (mounted) {
-          setState(() {}); // Force UI rebuild
+          setState(() {});
         }
       }
     });
@@ -402,13 +430,30 @@ class _HomeScreenState extends State<HomeScreen> {
             SnackBar(content: Text('✅ Uploaded to ${subject['name']} - $selectedUnit')),
           );
           
-          // FORCE IMMEDIATE REFRESH
           await _loadAllSubjects();
           if (mounted) {
-            setState(() {}); // Force UI rebuild
+            setState(() {});
           }
         }
       }
+    }
+  }
+
+  // Helper method to get different colors for each unit
+  Color _getUnitColor(String unitName, {required bool isDark}) {
+    switch (unitName) {
+      case 'Unit I':
+        return isDark ? const Color(0xFF9C27B0) : Colors.purple.shade500; // Purple
+      case 'Unit II':
+        return isDark ? const Color(0xFF2196F3) : Colors.blue.shade500; // Blue
+      case 'Unit III':
+        return isDark ? const Color(0xFF4CAF50) : Colors.green.shade500; // Green
+      case 'Unit IV':
+        return isDark ? const Color(0xFFFF9800) : Colors.orange.shade500; // Orange
+      case 'Unit V':
+        return isDark ? const Color(0xFFF44336) : Colors.red.shade500; // Red
+      default:
+        return isDark ? const Color(0xFF9C27B0) : Colors.purple.shade500;
     }
   }
 
@@ -416,6 +461,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final user = _authService.currentUser;
     final themeService = Provider.of<ThemeService>(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
       appBar: AppBar(
@@ -431,223 +477,510 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       drawer: _buildDrawer(context, user, themeService),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      isDark ? Colors.purple.shade300 : Colors.blue.shade300,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Loading your dashboard...',
+                    style: TextStyle(
+                      color: isDark ? Colors.white70 : Colors.grey.shade600,
+                    ),
+                  ),
+                ],
+              ),
+            )
           : _userProfile == null
-              ? _buildNoProfileView()
+              ? _buildNoProfileView(isDark)
               : _currentYearSubjects.isEmpty
-                  ? _buildEmptySubjectsView()
-                  : RefreshIndicator(
-                      onRefresh: () async {
-                        await _loadAllSubjects();
-                        setState(() {});
-                      },
-                      child: SingleChildScrollView(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                  ? _buildEmptySubjectsView(isDark)
+                  : _buildDashboard(isDark),
+    );
+  }
+
+  Widget _buildDashboard(bool isDark) {
+    return RefreshIndicator(
+      onRefresh: () async {
+        _animationController.reset();
+        _animationController.forward();
+        await _loadAllSubjects();
+        setState(() {});
+      },
+      color: isDark ? Colors.purple.shade300 : Colors.blue.shade300,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        child: FadeTransition(
+          opacity: _fadeAnimation,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Greeting Card with User Name - BEAUTIFUL GRADIENT
+              SlideTransition(
+                position: _slideAnimation,
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: isDark
+                          ? [const Color(0xFF6A1B9A), const Color(0xFF4A148C)]
+                          : [Colors.blue.shade400, Colors.blue.shade600],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: (isDark ? Colors.purple.shade900 : Colors.blue.shade200)
+                            .withOpacity(0.3),
+                        blurRadius: 15,
+                        offset: const Offset(0, 5),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Hello, ${_userProfile?.name.split(' ').first ?? 'Student'}!',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 28,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.2),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Text(
+                              '👋',
+                              style: TextStyle(fontSize: 28),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [Colors.blue.shade400, Colors.blue.shade600],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                ),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Year ${_userProfile!.currentYear} • Semester ${_userProfile!.currentSemester}',
-                                    style: const TextStyle(color: Colors.white, fontSize: 14),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    _userProfile!.branch.isEmpty
-                                        ? '${_userProfile!.academicStart}-${_userProfile!.academicEnd}'
-                                        : '${_userProfile!.branch} • ${_userProfile!.academicStart}-${_userProfile!.academicEnd}',
-                                    style: const TextStyle(color: Colors.white, fontSize: 12),
-                                  ),
-                                ],
+                            Icon(
+                              Icons.school,
+                              size: 16,
+                              color: Colors.white.withOpacity(0.9),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Year ${_userProfile!.currentYear} • Semester ${_userProfile!.currentSemester}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
                               ),
                             ),
-                            
-                            const SizedBox(height: 24),
-                            
-                            const Text(
-                              'Your Subjects',
-                              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                            ),
-                            const SizedBox(height: 16),
-                            
-                            ..._currentYearSubjects.map((subject) {
-                              return Container(
-                                margin: const EdgeInsets.only(bottom: 20),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.all(16),
-                                      decoration: BoxDecoration(
-                                        color: Colors.blue.shade700,
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Row(
-                                        children: [
-                                          CircleAvatar(
-                                            backgroundColor: Colors.white,
-                                            child: Text(
-                                              subject['name'][0].toUpperCase(),
-                                              style: TextStyle(
-                                                color: Colors.blue.shade700,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 12),
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  subject['name'],
-                                                  style: const TextStyle(
-                                                    color: Colors.white,
-                                                    fontSize: 18,
-                                                    fontWeight: FontWeight.bold,
-                                                  ),
-                                                ),
-                                                Text(
-                                                  subject['code'],
-                                                  style: const TextStyle(
-                                                    color: Colors.white70,
-                                                    fontSize: 14,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    
-                                    Container(
-                                      margin: const EdgeInsets.only(top: 8),
-                                      child: Column(
-                                        children: subject['units'].map<Widget>((unit) {
-                                          return Container(
-                                            margin: const EdgeInsets.only(bottom: 8),
-                                            padding: const EdgeInsets.all(12),
-                                            decoration: BoxDecoration(
-                                              color: Colors.white,
-                                              borderRadius: BorderRadius.circular(8),
-                                              border: Border.all(color: Colors.grey.shade200),
-                                            ),
-                                            child: Row(
-                                              children: [
-                                                Container(
-                                                  width: 40,
-                                                  height: 40,
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.blue.shade50,
-                                                    shape: BoxShape.circle,
-                                                  ),
-                                                  child: Center(
-                                                    child: Text(
-                                                      unit['name'].replaceAll('Unit ', ''),
-                                                      style: TextStyle(
-                                                        fontWeight: FontWeight.bold,
-                                                        color: Colors.blue.shade700,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ),
-                                                const SizedBox(width: 12),
-                                                Expanded(
-                                                  child: Column(
-                                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                                    children: [
-                                                      Text(
-                                                        unit['name'],
-                                                        style: const TextStyle(
-                                                          fontWeight: FontWeight.w600,
-                                                          fontSize: 16,
-                                                        ),
-                                                      ),
-                                                      const SizedBox(height: 4),
-                                                      Container(
-                                                        padding: const EdgeInsets.symmetric(
-                                                          horizontal: 8,
-                                                          vertical: 2,
-                                                        ),
-                                                        decoration: BoxDecoration(
-                                                          color: unit['notesCount'] > 0
-                                                              ? Colors.green.shade50
-                                                              : Colors.grey.shade100,
-                                                          borderRadius: BorderRadius.circular(12),
-                                                        ),
-                                                        child: Text(
-                                                          '${unit['notesCount']} notes',
-                                                          style: TextStyle(
-                                                            color: unit['notesCount'] > 0
-                                                                ? Colors.green.shade700
-                                                                : Colors.grey.shade600,
-                                                            fontSize: 12,
-                                                            fontWeight: FontWeight.bold,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                                IconButton(
-                                                  icon: Icon(
-                                                    Icons.arrow_forward,
-                                                    color: Colors.blue.shade700,
-                                                  ),
-                                                  onPressed: () => _navigateToNotes(subject, unit),
-                                                ),
-                                              ],
-                                            ),
-                                          );
-                                        }).toList(),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            }).toList(),
                           ],
                         ),
                       ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _userProfile!.branch.isEmpty
+                            ? 'Academic Year ${_userProfile!.academicStart}-${_userProfile!.academicEnd}'
+                            : '${_userProfile!.branch} • ${_userProfile!.academicStart}-${_userProfile!.academicEnd}',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.9),
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              
+              const SizedBox(height: 24),
+              
+              // Section Title
+              SlideTransition(
+                position: _slideAnimation,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Your Subjects',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white : Colors.grey.shade800,
+                      ),
                     ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? Colors.purple.shade900.withOpacity(0.3)
+                            : Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        '${_currentYearSubjects.length} subjects',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark ? Colors.purple.shade200 : Colors.blue.shade700,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              
+              const SizedBox(height: 16),
+              
+              // Subjects with ENHANCED COLORFUL UNITS
+              ..._currentYearSubjects.asMap().entries.map((entry) {
+                int index = entry.key;
+                var subject = entry.value;
+                
+                return AnimatedContainer(
+                  duration: Duration(milliseconds: 300 + (index * 100)),
+                  curve: Curves.easeOut,
+                  margin: const EdgeInsets.only(bottom: 20),
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0, 0.2),
+                      end: Offset.zero,
+                    ).animate(CurvedAnimation(
+                      parent: _animationController,
+                      curve: Interval(
+                        0.2 + (index * 0.1),
+                        0.6 + (index * 0.1),
+                        curve: Curves.easeOut,
+                      ),
+                    )),
+                    child: _buildSubjectCard(subject, isDark),
+                  ),
+                );
+              }).toList(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSubjectCard(Map<String, dynamic> subject, bool isDark) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Subject Header - Beautiful gradient
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: isDark
+                  ? [const Color(0xFF7B1FA2), const Color(0xFF512DA8)]
+                  : [Colors.blue.shade400, Colors.blue.shade700],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: (isDark ? Colors.purple.shade900 : Colors.blue.shade200)
+                    .withOpacity(0.3),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              // Subject icon with letter
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: Text(
+                  subject['name'][0].toUpperCase(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      subject['name'],
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subject['code'],
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        
+        const SizedBox(height: 8),
+        
+        // ENHANCED COLORFUL UNITS - Beautiful cards
+        Container(
+          margin: const EdgeInsets.only(left: 16),
+          child: Column(
+            children: subject['units'].map<Widget>((unit) {
+              bool isSynced = unit['folderId'] != null;
+              Color unitColor = _getUnitColor(unit['name'], isDark: isDark);
+              
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
+                margin: const EdgeInsets.only(bottom: 8),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: isSynced ? () => _navigateToNotes(subject, unit) : null,
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: isDark ? Colors.grey.shade900 : Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isSynced
+                              ? unitColor.withOpacity(0.3)
+                              : (isDark ? Colors.grey.shade800 : Colors.grey.shade200),
+                        ),
+                        boxShadow: isSynced
+                            ? [
+                                BoxShadow(
+                                  color: unitColor.withOpacity(0.1),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: Row(
+                        children: [
+                          // Unit Circle - COLORFUL!
+                          Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              gradient: isSynced
+                                  ? LinearGradient(
+                                      colors: [
+                                        unitColor,
+                                        unitColor.withOpacity(0.8),
+                                      ],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    )
+                                  : LinearGradient(
+                                      colors: [
+                                        isDark ? Colors.grey.shade700 : Colors.grey.shade300,
+                                        isDark ? Colors.grey.shade600 : Colors.grey.shade400,
+                                      ],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    ),
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                if (isSynced)
+                                  BoxShadow(
+                                    color: unitColor.withOpacity(0.4),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                              ],
+                            ),
+                            child: Center(
+                              child: Text(
+                                unit['name'].replaceAll('Unit ', ''),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                ),
+                              ),
+                            ),
+                          ),
+                          
+                          const SizedBox(width: 16),
+                          
+                          // Unit info
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  unit['name'],
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 16,
+                                    color: isSynced
+                                        ? (isDark ? Colors.white : Colors.grey.shade800)
+                                        : (isDark ? Colors.grey.shade500 : Colors.grey.shade500),
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                // Notes count badge
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 3,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: unit['notesCount'] > 0
+                                        ? unitColor.withOpacity(0.1)
+                                        : (isDark ? Colors.grey.shade800 : Colors.grey.shade100),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    '${unit['notesCount']} notes',
+                                    style: TextStyle(
+                                      color: unit['notesCount'] > 0
+                                          ? unitColor
+                                          : (isDark ? Colors.grey.shade500 : Colors.grey.shade500),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          
+                          // Arrow button
+                          if (isSynced)
+                            Container(
+                              decoration: BoxDecoration(
+                                color: unitColor.withOpacity(0.1),
+                                shape: BoxShape.circle,
+                              ),
+                              child: IconButton(
+                                icon: Icon(
+                                  Icons.arrow_forward,
+                                  color: unitColor,
+                                ),
+                                onPressed: () => _navigateToNotes(subject, unit),
+                                tooltip: 'Open notes',
+                              ),
+                            )
+                          else
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: isDark ? Colors.grey.shade800 : Colors.grey.shade100,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.lock_outline,
+                                size: 20,
+                                color: isDark ? Colors.grey.shade500 : Colors.grey.shade400,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      ],
     );
   }
 
   Widget _buildDrawer(BuildContext context, User? user, ThemeService themeService) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
     return Drawer(
       child: ListView(
         padding: EdgeInsets.zero,
         children: [
-          UserAccountsDrawerHeader(
-            accountName: Text(user?.displayName ?? 'Student'),
-            accountEmail: Text(user?.email ?? ''),
-            currentAccountPicture: CircleAvatar(
-              backgroundImage: user?.photoURL != null
-                  ? NetworkImage(user!.photoURL!)
-                  : null,
-              child: user?.photoURL == null
-                  ? const Icon(Icons.person, size: 40)
-                  : null,
+          // User Header with gradient
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: isDark
+                    ? [const Color(0xFF6A1B9A), const Color(0xFF4A148C)]
+                    : [Colors.blue.shade400, Colors.blue.shade600],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
             ),
-            decoration: const BoxDecoration(color: Colors.blue),
+            child: UserAccountsDrawerHeader(
+              accountName: Text(
+                user?.displayName ?? 'Student',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              accountEmail: Text(user?.email ?? ''),
+              currentAccountPicture: CircleAvatar(
+                backgroundImage: user?.photoURL != null
+                    ? NetworkImage(user!.photoURL!)
+                    : null,
+                child: user?.photoURL == null
+                    ? const Icon(Icons.person, size: 40, color: Colors.blue)
+                    : null,
+              ),
+              decoration: const BoxDecoration(color: Colors.transparent),
+            ),
           ),
           
           ListTile(
-            leading: const Icon(Icons.cloud_upload, color: Colors.green),
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: isDark ? Colors.green.shade900.withOpacity(0.3) : Colors.green.shade50,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.cloud_upload, color: isDark ? Colors.green.shade300 : Colors.green.shade700),
+            ),
             title: const Text('Sync to Google Drive'),
             onTap: () {
               Navigator.pop(context);
@@ -660,7 +993,14 @@ class _HomeScreenState extends State<HomeScreen> {
           const Divider(),
           
           ListTile(
-            leading: const Icon(Icons.person, color: Colors.blue),
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: isDark ? Colors.blue.shade900.withOpacity(0.3) : Colors.blue.shade50,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.person, color: isDark ? Colors.blue.shade300 : Colors.blue.shade700),
+            ),
             title: const Text('Profile'),
             onTap: () {
               Navigator.pop(context);
@@ -676,7 +1016,14 @@ class _HomeScreenState extends State<HomeScreen> {
           const Divider(),
           
           ListTile(
-            leading: const Icon(Icons.palette, color: Colors.purple),
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: isDark ? Colors.purple.shade900.withOpacity(0.3) : Colors.purple.shade50,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.palette, color: isDark ? Colors.purple.shade300 : Colors.purple.shade700),
+            ),
             title: const Text('Theme'),
             trailing: DropdownButton<AppTheme>(
               value: themeService.currentTheme,
@@ -695,7 +1042,14 @@ class _HomeScreenState extends State<HomeScreen> {
           const Divider(),
           
           ListTile(
-            leading: const Icon(Icons.upload_file, color: Colors.orange),
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: isDark ? Colors.orange.shade900.withOpacity(0.3) : Colors.orange.shade50,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.upload_file, color: isDark ? Colors.orange.shade300 : Colors.orange.shade700),
+            ),
             title: const Text('Quick Upload'),
             onTap: () async {
               Navigator.pop(context);
@@ -709,12 +1063,12 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: EdgeInsets.all(16),
             child: Text(
               'NAVIGATE TO OTHER YEARS',
-              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue),
+              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
             ),
           ),
           
           ListTile(
-            leading: const Icon(Icons.calendar_today),
+            leading: const Icon(Icons.calendar_today, color: Colors.blue),
             title: const Text('Select Year'),
             trailing: DropdownButton<String>(
               hint: const Text('Year'),
@@ -734,7 +1088,7 @@ class _HomeScreenState extends State<HomeScreen> {
           
           if (_navigateYear != null)
             ListTile(
-              leading: const Icon(Icons.school),
+              leading: const Icon(Icons.school, color: Colors.green),
               title: const Text('Select Semester'),
               trailing: DropdownButton<String>(
                 hint: const Text('Semester'),
@@ -753,7 +1107,7 @@ class _HomeScreenState extends State<HomeScreen> {
           
           if (_navigateYear != null && _navigateSemester != null)
             ListTile(
-              leading: const Icon(Icons.book),
+              leading: const Icon(Icons.book, color: Colors.orange),
               title: const Text('Select Subject'),
               trailing: DropdownButton<Map<String, dynamic>>(
                 hint: const Text('Subject'),
@@ -787,7 +1141,17 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           
           ...['I', 'II', 'III', 'IV'].map((year) => ListTile(
-            leading: Icon(Icons.looks_one, color: Colors.blue),
+            leading: CircleAvatar(
+              radius: 15,
+              backgroundColor: isDark ? Colors.grey.shade800 : Colors.grey.shade200,
+              child: Text(
+                year,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDark ? Colors.white : Colors.grey.shade700,
+                ),
+              ),
+            ),
             title: Text('Year $year'),
             onTap: () {
               Navigator.pop(context);
@@ -804,82 +1168,116 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildNoProfileView() {
+  Widget _buildNoProfileView(bool isDark) {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.person_outline, size: 80, color: Colors.grey.shade400),
-          const SizedBox(height: 20),
-          const Text(
-            'Complete Your Profile',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 10),
-          const Text(
-            'Set up your academic details to see your dashboard',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 16, color: Colors.grey),
-          ),
-          const SizedBox(height: 30),
-          ElevatedButton.icon(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const ProfileScreen(),
-                ),
-              ).then((_) => _loadUserProfile());
-            },
-            icon: const Icon(Icons.edit),
-            label: const Text('Go to Profile'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.person_outline,
+              size: 100,
+              color: isDark ? Colors.purple.shade300 : Colors.blue.shade300,
             ),
-          ),
-        ],
+            const SizedBox(height: 24),
+            Text(
+              'Complete Your Profile',
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : Colors.grey.shade800,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Set up your academic details\nto see your personalized dashboard',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 16,
+                color: isDark ? Colors.white70 : Colors.grey.shade600,
+              ),
+            ),
+            const SizedBox(height: 32),
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ProfileScreen(),
+                  ),
+                ).then((_) => _loadUserProfile());
+              },
+              icon: const Icon(Icons.edit),
+              label: const Text('Go to Profile'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: isDark ? Colors.purple.shade300 : Colors.blue,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildEmptySubjectsView() {
+  Widget _buildEmptySubjectsView(bool isDark) {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.book_outlined, size: 80, color: Colors.grey.shade400),
-          const SizedBox(height: 20),
-          const Text(
-            'No Subjects Yet',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 10),
-          const Text(
-            'Create your first subject to see it here',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 16, color: Colors.grey),
-          ),
-          const SizedBox(height: 30),
-          ElevatedButton.icon(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const YearScreen(academicType: 'UG'),
-                ),
-              ).then((_) => _loadAllSubjects());
-            },
-            icon: const Icon(Icons.add),
-            label: const Text('Create Subject'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.book_outlined,
+              size: 100,
+              color: isDark ? Colors.purple.shade300 : Colors.blue.shade300,
             ),
-          ),
-        ],
+            const SizedBox(height: 24),
+            Text(
+              'No Subjects Yet',
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : Colors.grey.shade800,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Create your first subject to see it here',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 16,
+                color: isDark ? Colors.white70 : Colors.grey.shade600,
+              ),
+            ),
+            const SizedBox(height: 32),
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const YearScreen(academicType: 'UG'),
+                  ),
+                ).then((_) => _loadAllSubjects());
+              },
+              icon: const Icon(Icons.add),
+              label: const Text('Create Subject'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: isDark ? Colors.purple.shade300 : Colors.blue,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
