@@ -521,103 +521,80 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Greeting Card with User Name - BEAUTIFUL GRADIENT
-              SlideTransition(
-                position: _slideAnimation,
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: isDark
-                          ? [const Color(0xFF6A1B9A), const Color(0xFF4A148C)]
-                          : [Colors.blue.shade400, Colors.blue.shade600],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: (isDark ? Colors.purple.shade900 : Colors.blue.shade200)
-                            .withOpacity(0.3),
-                        blurRadius: 15,
-                        offset: const Offset(0, 5),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'Hello, ${_userProfile?.name.split(' ').first ?? 'Student'}!',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 28,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.2),
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Text(
-                              '👋',
-                              style: TextStyle(fontSize: 28),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.school,
-                              size: 16,
-                              color: Colors.white.withOpacity(0.9),
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              'Year ${_userProfile!.currentYear} • Semester ${_userProfile!.currentSemester}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _userProfile!.branch.isEmpty
-                            ? 'Academic Year ${_userProfile!.academicStart}-${_userProfile!.academicEnd}'
-                            : '${_userProfile!.branch} • ${_userProfile!.academicStart}-${_userProfile!.academicEnd}',
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.9),
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
-                  ),
+              // SHORTER GREETING CARD - Replace the existing one
+SlideTransition(
+  position: _slideAnimation,
+  child: Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(16), // Reduced from 24 to 16
+    decoration: BoxDecoration(
+      gradient: LinearGradient(
+        colors: isDark
+            ? [const Color(0xFF6A1B9A), const Color(0xFF4A148C)]
+            : [Colors.blue.shade400, Colors.blue.shade600],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ),
+      borderRadius: BorderRadius.circular(16), // Reduced from 20 to 16
+      boxShadow: [
+        BoxShadow(
+          color: (isDark ? Colors.purple.shade900 : Colors.blue.shade200)
+              .withOpacity(0.3),
+          blurRadius: 10,
+          offset: const Offset(0, 3),
+        ),
+      ],
+    ),
+    child: Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Hello, ${_userProfile?.name.split(' ').first ?? 'Student'}! 👋',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 20, // Reduced from 28 to 20
+                  fontWeight: FontWeight.bold,
                 ),
               ),
+              const SizedBox(height: 4),
+              Text(
+                'Year ${_userProfile!.currentYear} • Semester ${_userProfile!.currentSemester}',
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                _userProfile!.branch.isEmpty
+                    ? '${_userProfile!.academicStart}-${_userProfile!.academicEnd}'
+                    : '${_userProfile!.branch}',
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.2),
+            shape: BoxShape.circle,
+          ),
+          child: const Text(
+            '👋',
+            style: TextStyle(fontSize: 24),
+          ),
+        ),
+      ],
+    ),
+  ),
+),
               
               const SizedBox(height: 24),
               
