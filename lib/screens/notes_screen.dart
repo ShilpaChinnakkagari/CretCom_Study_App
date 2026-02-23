@@ -35,18 +35,27 @@ class _NotesScreenState extends State<NotesScreen> {
   final List<Note> _notes = [];
   bool _isLoading = false;
   final TextEditingController _textNoteController = TextEditingController();
+  final TextEditingController _noteTitleController = TextEditingController();
   late final String _notesStorageKey;
+
+  // For tracking note being edited
+  Note? _editingNote;
+  bool _isEditing = false;
+
+  // For image upload
+  final ImagePicker _imagePicker = ImagePicker();
 
   @override
   void initState() {
     super.initState();
     _notesStorageKey = 'notes_${widget.unit.folderId ?? widget.unit.id}';
     print("📝 Notes storage key: $_notesStorageKey");
-    print("📁 Unit folder ID: ${widget.unit.folderId}");
     _loadNotes();
   }
 
-  // Load notes from local storage
+  // ==================== CRUD OPERATIONS ====================
+
+  // CREATE - Load notes
   Future<void> _loadNotes() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -58,126 +67,75 @@ class _NotesScreenState extends State<NotesScreen> {
           _notes.clear();
           _notes.addAll(jsonList.map((json) => Note.fromJson(json)).toList());
         });
-        print("✅ Loaded ${_notes.length} notes from permanent storage");
-      } else {
-        print("📝 No notes found in storage");
+        print("✅ Loaded ${_notes.length} notes");
       }
     } catch (e) {
       print("Error loading notes: $e");
     }
   }
 
-  // Save notes to local storage
+  // CREATE/UPDATE - Save notes
   Future<void> _saveNotes() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final String notesJson = jsonEncode(_notes.map((note) => note.toJson()).toList());
       await prefs.setString(_notesStorageKey, notesJson);
-      print("✅ Saved ${_notes.length} notes to permanent storage");
+      print("✅ Saved ${_notes.length} notes");
     } catch (e) {
       print("Error saving notes: $e");
     }
   }
 
-  Future<void> _pickFile() async {
-    try {
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['pdf', 'doc', 'docx', 'txt', 'jpg', 'jpeg', 'png'],
-      );
-
-      if (result != null) {
-        setState(() => _isLoading = true);
-        
-        File file = File(result.files.single.path!);
-        String fileName = result.files.single.name;
-        
-        if (widget.unit.folderId != null) {
-          bool success = await _driveService.uploadFile(
-            file.path,
-            fileName,
-            widget.unit.folderId!,
-          );
-          
-          if (success && mounted) {
-            setState(() {
-              _notes.add(Note(
-                id: DateTime.now().toString(),
-                title: fileName,
-                fileId: widget.unit.folderId,
-                createdAt: DateTime.now(),
-              ));
-            });
-            
-            await _saveNotes();
-            
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('✅ $fileName uploaded'), backgroundColor: Colors.green),
-            );
-          }
-        }
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red),
-      );
-    } finally {
-      setState(() => _isLoading = false);
-    }
+  // CREATE - Show dialog for title
+  Future<String?> _showTitleDialog(String action, {String? initialValue}) {
+    _noteTitleController.text = initialValue ?? '';
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('$action Note'),
+        content: TextField(
+          controller: _noteTitleController,
+          decoration: const InputDecoration(
+            labelText: 'Note Title',
+            hintText: 'e.g., 1M, 2M, Important Formulas',
+            border: OutlineInputBorder(),
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              if (_noteTitleController.text.isNotEmpty) {
+                Navigator.pop(context, _noteTitleController.text);
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
   }
 
-  Future<void> _captureImage() async {
-    try {
-      final ImagePicker picker = ImagePicker();
-      final XFile? image = await picker.pickImage(source: ImageSource.camera);
-
-      if (image != null) {
-        setState(() => _isLoading = true);
-        
-        File file = File(image.path);
-        String fileName = 'image_${DateTime.now().millisecondsSinceEpoch}.jpg';
-        
-        if (widget.unit.folderId != null) {
-          bool success = await _driveService.uploadFile(
-            file.path,
-            fileName,
-            widget.unit.folderId!,
-          );
-          
-          if (success && mounted) {
-            setState(() {
-              _notes.add(Note(
-                id: DateTime.now().toString(),
-                title: fileName,
-                fileId: widget.unit.folderId,
-                createdAt: DateTime.now(),
-              ));
-            });
-            
-            await _saveNotes();
-            
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('✅ Image captured and uploaded'), backgroundColor: Colors.green),
-            );
-          }
-        }
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red),
-      );
-    } finally {
-      setState(() => _isLoading = false);
-    }
-  }
-
+  // CREATE - Save text note
   Future<void> _saveTextNote() async {
-    if (_textNoteController.text.isEmpty) return;
+    if (_textNoteController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter note content'), backgroundColor: Colors.orange),
+      );
+      return;
+    }
+
+    String? title = await _showTitleDialog('Save Text');
+    if (title == null) return;
 
     try {
       setState(() => _isLoading = true);
       
-      String fileName = 'note_${DateTime.now().millisecondsSinceEpoch}.txt';
+      String fileName = '${title.replaceAll(' ', '_')}_${DateTime.now().millisecondsSinceEpoch}.txt';
       String tempPath = '${Directory.systemTemp.path}/$fileName';
       File tempFile = File(tempPath);
       await tempFile.writeAsString(_textNoteController.text);
@@ -193,7 +151,7 @@ class _NotesScreenState extends State<NotesScreen> {
           setState(() {
             _notes.add(Note(
               id: DateTime.now().toString(),
-              title: 'Text Note - ${DateTime.now().toString().split(' ')[0]}',
+              title: title,
               content: _textNoteController.text,
               fileId: widget.unit.folderId,
               createdAt: DateTime.now(),
@@ -204,8 +162,10 @@ class _NotesScreenState extends State<NotesScreen> {
           await _saveNotes();
           
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('✅ Text note saved'), backgroundColor: Colors.green),
+            SnackBar(content: Text('✅ "$title" created'), backgroundColor: Colors.green),
           );
+          
+          Navigator.pop(context, true);
         }
       }
     } catch (e) {
@@ -217,7 +177,268 @@ class _NotesScreenState extends State<NotesScreen> {
     }
   }
 
-  // Download file from Drive
+  // CREATE - Upload image from gallery
+  Future<void> _uploadImage() async {
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1920,
+        maxHeight: 1080,
+        imageQuality: 85,
+      );
+
+      if (image == null) return;
+
+      String? title = await _showTitleDialog('Upload Image');
+      if (title == null) return;
+
+      setState(() => _isLoading = true);
+      
+      File file = File(image.path);
+      String fileName = '${title.replaceAll(' ', '_')}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      
+      if (widget.unit.folderId != null) {
+        bool success = await _driveService.uploadFile(
+          file.path,
+          fileName,
+          widget.unit.folderId!,
+        );
+        
+        if (success && mounted) {
+          setState(() {
+            _notes.add(Note(
+              id: DateTime.now().toString(),
+              title: title,
+              fileId: widget.unit.folderId,
+              createdAt: DateTime.now(),
+            ));
+          });
+          
+          await _saveNotes();
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('✅ Image "$title" uploaded'), backgroundColor: Colors.green),
+          );
+          
+          Navigator.pop(context, true);
+        }
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  // CREATE - Capture image from camera
+  Future<void> _captureImage() async {
+    try {
+      final XFile? image = await _imagePicker.pickImage(source: ImageSource.camera);
+
+      if (image == null) return;
+
+      String? title = await _showTitleDialog('Capture Image');
+      if (title == null) return;
+
+      setState(() => _isLoading = true);
+      
+      File file = File(image.path);
+      String fileName = '${title.replaceAll(' ', '_')}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      
+      if (widget.unit.folderId != null) {
+        bool success = await _driveService.uploadFile(
+          file.path,
+          fileName,
+          widget.unit.folderId!,
+        );
+        
+        if (success && mounted) {
+          setState(() {
+            _notes.add(Note(
+              id: DateTime.now().toString(),
+              title: title,
+              fileId: widget.unit.folderId,
+              createdAt: DateTime.now(),
+            ));
+          });
+          
+          await _saveNotes();
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('✅ Image "$title" captured'), backgroundColor: Colors.green),
+          );
+          
+          Navigator.pop(context, true);
+        }
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  // CREATE - Upload file
+  Future<void> _uploadFile() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf', 'doc', 'docx', 'txt', 'jpg', 'jpeg', 'png'],
+      );
+
+      if (result == null) return;
+
+      String? title = await _showTitleDialog('Upload File');
+      if (title == null) return;
+
+      setState(() => _isLoading = true);
+      
+      File file = File(result.files.single.path!);
+      String originalFileName = result.files.single.name;
+      String extension = originalFileName.split('.').last;
+      String fileName = '${title.replaceAll(' ', '_')}_${DateTime.now().millisecondsSinceEpoch}.$extension';
+      
+      if (widget.unit.folderId != null) {
+        bool success = await _driveService.uploadFile(
+          file.path,
+          fileName,
+          widget.unit.folderId!,
+        );
+        
+        if (success && mounted) {
+          setState(() {
+            _notes.add(Note(
+              id: DateTime.now().toString(),
+              title: title,
+              fileId: widget.unit.folderId,
+              createdAt: DateTime.now(),
+            ));
+          });
+          
+          await _saveNotes();
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('✅ File "$title" uploaded'), backgroundColor: Colors.green),
+          );
+          
+          Navigator.pop(context, true);
+        }
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  // UPDATE - Edit note
+  Future<void> _editNote(Note note) async {
+    if (note.content != null) {
+      // For text notes
+      _textNoteController.text = note.content!;
+      String? newTitle = await _showTitleDialog('Edit', initialValue: note.title);
+      
+      if (newTitle != null) {
+        setState(() {
+          note.title = newTitle;
+          // Note: Content editing would require re-uploading to Drive
+          // For simplicity, we'll just update the title
+        });
+        await _saveNotes();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('✅ Note updated'), backgroundColor: Colors.green),
+        );
+      }
+    } else {
+      // For files/images, just edit the title
+      String? newTitle = await _showTitleDialog('Edit', initialValue: note.title);
+      if (newTitle != null) {
+        setState(() {
+          note.title = newTitle;
+        });
+        await _saveNotes();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('✅ Note renamed'), backgroundColor: Colors.green),
+        );
+      }
+    }
+  }
+
+  // DELETE - Delete note (already implemented via swipe)
+  Future<void> _deleteNote(Note note) async {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Note'),
+        content: Text('Are you sure you want to delete "${note.title}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              setState(() {
+                _notes.remove(note);
+              });
+              await _saveNotes();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('✅ Note deleted'), backgroundColor: Colors.orange),
+              );
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // READ - View note
+  Future<void> _viewNote(Note note) async {
+    try {
+      if (note.content != null && note.content!.isNotEmpty) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text(note.title),
+            content: Container(
+              width: double.maxFinite,
+              height: 400,
+              child: SingleChildScrollView(
+                child: Text(note.content!),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+
+      final downloadedFile = await _downloadFromDrive(note.title);
+      if (downloadedFile != null && mounted) {
+        await _viewDownloadedFile(downloadedFile, note.title);
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error opening note: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  // Helper: Download file from Drive
   Future<File?> _downloadFromDrive(String fileName) async {
     try {
       if (!mounted) return null;
@@ -225,9 +446,7 @@ class _NotesScreenState extends State<NotesScreen> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(),
-        ),
+        builder: (context) => const Center(child: CircularProgressIndicator()),
       );
 
       final driveApi = await _driveService.getDriveApi();
@@ -266,7 +485,7 @@ class _NotesScreenState extends State<NotesScreen> {
         return downloadFile;
       } else {
         if (mounted) Navigator.pop(context);
-        throw Exception('Unexpected response type from Drive API');
+        throw Exception('Unexpected response');
       }
     } catch (e) {
       if (mounted) {
@@ -279,60 +498,11 @@ class _NotesScreenState extends State<NotesScreen> {
     }
   }
 
-  // View PDF using in-app viewer - WORKS ON ALL PHONES!
-  Future<void> _viewPDFInApp(File file, String fileName) async {
-    try {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => Scaffold(
-            appBar: AppBar(
-              title: Text(
-                fileName,
-                style: const TextStyle(fontSize: 16),
-              ),
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
-            body: PDFView(
-              filePath: file.path,
-              enableSwipe: true,
-              swipeHorizontal: true,
-              autoSpacing: true,
-              pageFling: false,
-              onError: (error) {
-                print("PDF Error: $error");
-                // If PDF viewer fails, show error and offer share option
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Error loading PDF: $error'),
-                    backgroundColor: Colors.red,
-                    action: SnackBarAction(
-                      label: 'Share',
-                      onPressed: () => Share.shareXFiles([XFile(file.path)]),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ),
-      );
-    } catch (e) {
-      print("Error opening PDF: $e");
-      // Fallback to sharing
-      await Share.shareXFiles([XFile(file.path)]);
-    }
-  }
-
-  // View downloaded file - MODIFIED to always use in-app PDF viewer
+  // Helper: View downloaded file
   Future<void> _viewDownloadedFile(File file, String fileName) async {
     String lowerName = fileName.toLowerCase();
     
-    if (lowerName.endsWith('.jpg') ||
-        lowerName.endsWith('.jpeg') ||
-        lowerName.endsWith('.png')) {
-      // View image directly in app
+    if (lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg') || lowerName.endsWith('.png')) {
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -353,7 +523,6 @@ class _NotesScreenState extends State<NotesScreen> {
         ),
       );
     } else if (lowerName.endsWith('.txt')) {
-      // View text file directly in app
       try {
         String content = await file.readAsString();
         showDialog(
@@ -377,82 +546,25 @@ class _NotesScreenState extends State<NotesScreen> {
         );
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error reading text file: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('Error reading file: $e'), backgroundColor: Colors.red),
         );
       }
     } else if (lowerName.endsWith('.pdf')) {
-      // Use in-app PDF viewer - THIS WILL WORK ON REDMI!
-      await _viewPDFInApp(file, fileName);
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => Scaffold(
+            appBar: AppBar(
+              title: Text(fileName),
+              backgroundColor: Colors.red,
+            ),
+            body: PDFView(filePath: file.path),
+          ),
+        ),
+      );
     } else {
-      // For other files, share
       await Share.shareXFiles([XFile(file.path)]);
     }
-  }
-
-  Future<void> _viewNote(Note note) async {
-    try {
-      if (note.content != null && note.content!.isNotEmpty) {
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: Text(note.title),
-            content: Container(
-              width: double.maxFinite,
-              height: 400,
-              child: SingleChildScrollView(
-                child: Text(note.content!),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Close'),
-              ),
-            ],
-          ),
-        );
-        return;
-      }
-
-      final downloadedFile = await _downloadFromDrive(note.title);
-      if (downloadedFile != null && mounted) {
-        await _viewDownloadedFile(downloadedFile, note.title);
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error opening note: $e'), backgroundColor: Colors.red),
-      );
-    }
-  }
-
-  Future<void> _deleteNote(Note note) async {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Note'),
-        content: Text('Are you sure you want to delete "${note.title}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              setState(() {
-                _notes.remove(note);
-              });
-              await _saveNotes();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('✅ Note deleted'), backgroundColor: Colors.orange),
-              );
-            },
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -474,6 +586,7 @@ class _NotesScreenState extends State<NotesScreen> {
       ),
       body: Column(
         children: [
+          // Input Section
           Card(
             margin: const EdgeInsets.all(16),
             elevation: 4,
@@ -491,6 +604,7 @@ class _NotesScreenState extends State<NotesScreen> {
                   ),
                   const SizedBox(height: 16),
                   
+                  // Text note input
                   TextField(
                     controller: _textNoteController,
                     maxLines: 3,
@@ -502,6 +616,7 @@ class _NotesScreenState extends State<NotesScreen> {
                   ),
                   const SizedBox(height: 8),
                   
+                  // Action buttons
                   Row(
                     children: [
                       Expanded(
@@ -518,7 +633,7 @@ class _NotesScreenState extends State<NotesScreen> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: ElevatedButton.icon(
-                          onPressed: _isLoading ? null : _pickFile,
+                          onPressed: _isLoading ? null : _uploadFile,
                           icon: const Icon(Icons.attach_file),
                           label: const Text('Upload File'),
                           style: ElevatedButton.styleFrom(
@@ -530,51 +645,50 @@ class _NotesScreenState extends State<NotesScreen> {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _isLoading ? null : _captureImage,
-                      icon: const Icon(Icons.camera_alt),
-                      label: const Text('Capture Image'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange,
-                        foregroundColor: Colors.white,
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _isLoading ? null : _uploadImage,
+                          icon: const Icon(Icons.photo_library),
+                          label: const Text('Upload Image'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.orange,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
                       ),
-                    ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _isLoading ? null : _captureImage,
+                          icon: const Icon(Icons.camera_alt),
+                          label: const Text('Capture'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.purple,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
           ),
           
+          // Notes List with CRUD options
           Expanded(
             child: _notes.isEmpty
                 ? Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(
-                          Icons.note_alt,
-                          size: 64,
-                          color: Colors.grey.shade400,
-                        ),
+                        Icon(Icons.note_alt, size: 64, color: Colors.grey.shade400),
                         const SizedBox(height: 16),
-                        Text(
-                          'No notes yet',
-                          style: TextStyle(
-                            fontSize: 18,
-                            color: Colors.grey.shade600,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                        Text('No notes yet', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.grey.shade600)),
                         const SizedBox(height: 8),
-                        Text(
-                          'Add your first note above!',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey.shade500,
-                          ),
-                        ),
+                        Text('Add your first note above!', style: TextStyle(fontSize: 14, color: Colors.grey.shade500)),
                       ],
                     ),
                   )
@@ -605,23 +719,14 @@ class _NotesScreenState extends State<NotesScreen> {
                                 title: const Text('Delete'),
                                 content: Text('Delete "${note.title}"?'),
                                 actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(context, false),
-                                    child: const Text('Cancel'),
-                                  ),
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(context, true),
-                                    style: TextButton.styleFrom(foregroundColor: Colors.red),
-                                    child: const Text('Delete'),
-                                  ),
+                                  TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+                                  TextButton(onPressed: () => Navigator.pop(context, true), style: TextButton.styleFrom(foregroundColor: Colors.red), child: const Text('Delete')),
                                 ],
                               ),
                             );
                           },
                           onDismissed: (direction) async {
-                            setState(() {
-                              _notes.removeAt(index);
-                            });
+                            setState(() => _notes.removeAt(index));
                             await _saveNotes();
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(content: Text('${note.title} deleted')),
@@ -630,38 +735,23 @@ class _NotesScreenState extends State<NotesScreen> {
                           child: ListTile(
                             contentPadding: const EdgeInsets.all(12),
                             leading: CircleAvatar(
-                              backgroundColor: note.content != null 
-                                  ? Colors.blue.shade100 
-                                  : Colors.green.shade100,
-                              child: Icon(
-                                note.content != null ? Icons.note : Icons.insert_drive_file,
-                                color: note.content != null ? Colors.blue : Colors.green,
-                              ),
+                              backgroundColor: note.content != null ? Colors.blue.shade100 : Colors.green.shade100,
+                              child: Icon(note.content != null ? Icons.note : Icons.image, color: note.content != null ? Colors.blue : Colors.green),
                             ),
-                            title: Text(
-                              note.title,
-                              style: const TextStyle(fontWeight: FontWeight.w600),
-                            ),
-                            subtitle: Text(
-                              'Added: ${note.createdAt.toString().split('.').first}',
-                              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                            ),
+                            title: Text(note.title, style: const TextStyle(fontWeight: FontWeight.bold)),
+                            subtitle: Text('Added: ${note.createdAt.toString().split('.').first}', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                IconButton(
-                                  icon: const Icon(Icons.visibility, color: Colors.blue),
-                                  onPressed: () => _viewNote(note),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.share, color: Colors.green),
-                                  onPressed: () async {
-                                    final file = await _downloadFromDrive(note.title);
-                                    if (file != null) {
-                                      await Share.shareXFiles([XFile(file.path)]);
-                                    }
-                                  },
-                                ),
+                                // View button
+                                IconButton(icon: const Icon(Icons.visibility, color: Colors.blue), onPressed: () => _viewNote(note)),
+                                // Edit button
+                                IconButton(icon: const Icon(Icons.edit, color: Colors.orange), onPressed: () => _editNote(note)),
+                                // Share button
+                                IconButton(icon: const Icon(Icons.share, color: Colors.green), onPressed: () async {
+                                  final file = await _downloadFromDrive(note.title);
+                                  if (file != null) await Share.shareXFiles([XFile(file.path)]);
+                                }),
                               ],
                             ),
                             onTap: () => _viewNote(note),
