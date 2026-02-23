@@ -229,9 +229,6 @@ class _HomeScreenState extends State<HomeScreen> {
               });
               
               print("✅ Added subject: $subjectName with ${units.length} units");
-              for (var unit in units) {
-                print("    - ${unit['name']}: ${unit['notesCount']} notes (folder: ${unit['folderId']})");
-              }
             }
           } catch (e) {
             print("❌ Error parsing subjects JSON: $e");
@@ -306,7 +303,7 @@ class _HomeScreenState extends State<HomeScreen> {
       folderId: unit['folderId'],
     );
     
-    Navigator.push(
+    Navigator.push<bool>(
       context,
       MaterialPageRoute(
         builder: (context) => NotesScreen(
@@ -316,7 +313,15 @@ class _HomeScreenState extends State<HomeScreen> {
           unit: unitObj,
         ),
       ),
-    ).then((_) => _loadAllSubjects());
+    ).then((changed) async {
+      if (changed == true) {
+        print("🔄 Changes detected, reloading subjects...");
+        await _loadAllSubjects();
+        if (mounted) {
+          setState(() {}); // Force UI rebuild
+        }
+      }
+    });
   }
 
   Future<void> _quickUpload() async {
@@ -328,7 +333,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     if (_currentYearSubjects.length == 1) {
-      _uploadToSubject(_currentYearSubjects.first);
+      await _uploadToSubject(_currentYearSubjects.first);
       return;
     }
 
@@ -346,9 +351,9 @@ class _HomeScreenState extends State<HomeScreen> {
               return ListTile(
                 title: Text(subject['name']),
                 subtitle: Text(subject['code']),
-                onTap: () {
+                onTap: () async {
                   Navigator.pop(context);
-                  _uploadToSubject(subject);
+                  await _uploadToSubject(subject);
                 },
               );
             },
@@ -396,7 +401,12 @@ class _HomeScreenState extends State<HomeScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('✅ Uploaded to ${subject['name']} - $selectedUnit')),
           );
-          _loadAllSubjects();
+          
+          // FORCE IMMEDIATE REFRESH
+          await _loadAllSubjects();
+          if (mounted) {
+            setState(() {}); // Force UI rebuild
+          }
         }
       }
     }
@@ -426,7 +436,194 @@ class _HomeScreenState extends State<HomeScreen> {
               ? _buildNoProfileView()
               : _currentYearSubjects.isEmpty
                   ? _buildEmptySubjectsView()
-                  : _buildDashboard(),
+                  : RefreshIndicator(
+                      onRefresh: () async {
+                        await _loadAllSubjects();
+                        setState(() {});
+                      },
+                      child: SingleChildScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [Colors.blue.shade400, Colors.blue.shade600],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Year ${_userProfile!.currentYear} • Semester ${_userProfile!.currentSemester}',
+                                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    _userProfile!.branch.isEmpty
+                                        ? '${_userProfile!.academicStart}-${_userProfile!.academicEnd}'
+                                        : '${_userProfile!.branch} • ${_userProfile!.academicStart}-${_userProfile!.academicEnd}',
+                                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            
+                            const SizedBox(height: 24),
+                            
+                            const Text(
+                              'Your Subjects',
+                              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(height: 16),
+                            
+                            ..._currentYearSubjects.map((subject) {
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 20),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(16),
+                                      decoration: BoxDecoration(
+                                        color: Colors.blue.shade700,
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          CircleAvatar(
+                                            backgroundColor: Colors.white,
+                                            child: Text(
+                                              subject['name'][0].toUpperCase(),
+                                              style: TextStyle(
+                                                color: Colors.blue.shade700,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  subject['name'],
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 18,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  subject['code'],
+                                                  style: const TextStyle(
+                                                    color: Colors.white70,
+                                                    fontSize: 14,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    
+                                    Container(
+                                      margin: const EdgeInsets.only(top: 8),
+                                      child: Column(
+                                        children: subject['units'].map<Widget>((unit) {
+                                          return Container(
+                                            margin: const EdgeInsets.only(bottom: 8),
+                                            padding: const EdgeInsets.all(12),
+                                            decoration: BoxDecoration(
+                                              color: Colors.white,
+                                              borderRadius: BorderRadius.circular(8),
+                                              border: Border.all(color: Colors.grey.shade200),
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                Container(
+                                                  width: 40,
+                                                  height: 40,
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.blue.shade50,
+                                                    shape: BoxShape.circle,
+                                                  ),
+                                                  child: Center(
+                                                    child: Text(
+                                                      unit['name'].replaceAll('Unit ', ''),
+                                                      style: TextStyle(
+                                                        fontWeight: FontWeight.bold,
+                                                        color: Colors.blue.shade700,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 12),
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    children: [
+                                                      Text(
+                                                        unit['name'],
+                                                        style: const TextStyle(
+                                                          fontWeight: FontWeight.w600,
+                                                          fontSize: 16,
+                                                        ),
+                                                      ),
+                                                      const SizedBox(height: 4),
+                                                      Container(
+                                                        padding: const EdgeInsets.symmetric(
+                                                          horizontal: 8,
+                                                          vertical: 2,
+                                                        ),
+                                                        decoration: BoxDecoration(
+                                                          color: unit['notesCount'] > 0
+                                                              ? Colors.green.shade50
+                                                              : Colors.grey.shade100,
+                                                          borderRadius: BorderRadius.circular(12),
+                                                        ),
+                                                        child: Text(
+                                                          '${unit['notesCount']} notes',
+                                                          style: TextStyle(
+                                                            color: unit['notesCount'] > 0
+                                                                ? Colors.green.shade700
+                                                                : Colors.grey.shade600,
+                                                            fontSize: 12,
+                                                            fontWeight: FontWeight.bold,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                                IconButton(
+                                                  icon: Icon(
+                                                    Icons.arrow_forward,
+                                                    color: Colors.blue.shade700,
+                                                  ),
+                                                  onPressed: () => _navigateToNotes(subject, unit),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        }).toList(),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }).toList(),
+                          ],
+                        ),
+                      ),
+                    ),
     );
   }
 
@@ -500,9 +697,9 @@ class _HomeScreenState extends State<HomeScreen> {
           ListTile(
             leading: const Icon(Icons.upload_file, color: Colors.orange),
             title: const Text('Quick Upload'),
-            onTap: () {
+            onTap: () async {
               Navigator.pop(context);
-              _quickUpload();
+              await _quickUpload();
             },
           ),
           
@@ -682,190 +879,6 @@ class _HomeScreenState extends State<HomeScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
             ),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDashboard() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Colors.blue.shade400, Colors.blue.shade600],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Year ${_userProfile!.currentYear} • Semester ${_userProfile!.currentSemester}',
-                  style: const TextStyle(color: Colors.white, fontSize: 14),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _userProfile!.branch.isEmpty
-                      ? '${_userProfile!.academicStart}-${_userProfile!.academicEnd}'
-                      : '${_userProfile!.branch} • ${_userProfile!.academicStart}-${_userProfile!.academicEnd}',
-                  style: const TextStyle(color: Colors.white, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-          
-          const SizedBox(height: 24),
-          
-          const Text(
-            'Your Subjects',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 16),
-          
-          ..._currentYearSubjects.map((subject) {
-            return Container(
-              margin: const EdgeInsets.only(bottom: 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.shade700,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      children: [
-                        CircleAvatar(
-                          backgroundColor: Colors.white,
-                          child: Text(
-                            subject['name'][0].toUpperCase(),
-                            style: TextStyle(
-                              color: Colors.blue.shade700,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                subject['name'],
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              Text(
-                                subject['code'],
-                                style: const TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  
-                  Container(
-                    margin: const EdgeInsets.only(top: 8),
-                    child: Column(
-                      children: subject['units'].map<Widget>((unit) {
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.grey.shade200),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 40,
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: Colors.blue.shade50,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    unit['name'].replaceAll('Unit ', ''),
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.blue.shade700,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      unit['name'],
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 16,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 2,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: unit['notesCount'] > 0
-                                            ? Colors.green.shade50
-                                            : Colors.grey.shade100,
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Text(
-                                        '${unit['notesCount']} notes',
-                                        style: TextStyle(
-                                          color: unit['notesCount'] > 0
-                                              ? Colors.green.shade700
-                                              : Colors.grey.shade600,
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              IconButton(
-                                icon: Icon(
-                                  Icons.arrow_forward,
-                                  color: Colors.blue.shade700,
-                                ),
-                                onPressed: () => _navigateToNotes(subject, unit),
-                              ),
-                            ],
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }).toList(),
         ],
       ),
     );
