@@ -1,7 +1,7 @@
 class AcademicYear {
   String id;
-  String name; // I, II, III, IV
-  String type; // UG or PG
+  String name;
+  String type;
   String? folderId;
   List<Semester> semesters;
 
@@ -16,7 +16,7 @@ class AcademicYear {
 
 class Semester {
   String id;
-  String name; // Semester I, Semester II
+  String name;
   String? folderId;
   List<Subject> subjects;
 
@@ -46,7 +46,7 @@ class Subject {
 
 class Unit {
   String id;
-  String name; // Unit I, Unit II
+  String name;
   String? folderId;
   List<Note> notes;
   List<QuestionBank> questionBanks;
@@ -63,8 +63,8 @@ class Unit {
 class Note {
   String id;
   String title;
-  String? fileId; // Google Drive file ID
-  String? content; // For text notes
+  String? fileId;
+  String? content;
   DateTime createdAt;
 
   Note({
@@ -75,7 +75,6 @@ class Note {
     required this.createdAt,
   });
 
-  // Convert Note to JSON for storage
   Map<String, dynamic> toJson() => {
     'id': id,
     'title': title,
@@ -84,7 +83,6 @@ class Note {
     'createdAt': createdAt.toIso8601String(),
   };
 
-  // Create Note from JSON
   factory Note.fromJson(Map<String, dynamic> json) => Note(
     id: json['id'],
     title: json['title'],
@@ -96,7 +94,7 @@ class Note {
 
 class QuestionBank {
   String id;
-  String title; // "1 Mark Questions", "2 Mark Questions", etc.
+  String title;
   List<Question> questions;
   String? folderId;
 
@@ -107,7 +105,6 @@ class QuestionBank {
     this.folderId,
   });
 
-  // Convert to JSON for storage
   Map<String, dynamic> toJson() => {
     'id': id,
     'title': title,
@@ -115,7 +112,6 @@ class QuestionBank {
     'questions': questions.map((q) => q.toJson()).toList(),
   };
 
-  // Create from JSON
   factory QuestionBank.fromJson(Map<String, dynamic> json) => QuestionBank(
     id: json['id'],
     title: json['title'],
@@ -130,7 +126,7 @@ class Question {
   String id;
   String question;
   String? answer;
-  List<String> imageFileIds; // Google Drive image IDs
+  List<String> imageFileIds;
   int marks;
 
   Question({
