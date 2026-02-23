@@ -40,10 +40,9 @@ class _NotesScreenState extends State<NotesScreen> {
   @override
   void initState() {
     super.initState();
-    // Use unit folder ID as permanent key - this NEVER changes
     _notesStorageKey = 'notes_${widget.unit.folderId ?? widget.unit.id}';
-    print("📝 Notes storage key: $_notesStorageKey");  // ← This should show the same key every time
-    print("📁 Unit folder ID: ${widget.unit.folderId}");  // ← This should NOT be null
+    print("📝 Notes storage key: $_notesStorageKey");
+    print("📁 Unit folder ID: ${widget.unit.folderId}");
     _loadNotes();
   }
 
@@ -110,7 +109,7 @@ class _NotesScreenState extends State<NotesScreen> {
               ));
             });
             
-            await _saveNotes(); // Save to permanent storage
+            await _saveNotes();
             
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text('✅ $fileName uploaded'), backgroundColor: Colors.green),
@@ -155,7 +154,7 @@ class _NotesScreenState extends State<NotesScreen> {
               ));
             });
             
-            await _saveNotes(); // Save to permanent storage
+            await _saveNotes();
             
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text('✅ Image captured and uploaded'), backgroundColor: Colors.green),
@@ -202,7 +201,7 @@ class _NotesScreenState extends State<NotesScreen> {
           });
           
           _textNoteController.clear();
-          await _saveNotes(); // Save to permanent storage
+          await _saveNotes();
           
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('✅ Text note saved'), backgroundColor: Colors.green),
@@ -280,7 +279,53 @@ class _NotesScreenState extends State<NotesScreen> {
     }
   }
 
-  // View downloaded file
+  // View PDF using in-app viewer - WORKS ON ALL PHONES!
+  Future<void> _viewPDFInApp(File file, String fileName) async {
+    try {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => Scaffold(
+            appBar: AppBar(
+              title: Text(
+                fileName,
+                style: const TextStyle(fontSize: 16),
+              ),
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            body: PDFView(
+              filePath: file.path,
+              enableSwipe: true,
+              swipeHorizontal: true,
+              autoSpacing: true,
+              pageFling: false,
+              onError: (error) {
+                print("PDF Error: $error");
+                // If PDF viewer fails, show error and offer share option
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Error loading PDF: $error'),
+                    backgroundColor: Colors.red,
+                    action: SnackBarAction(
+                      label: 'Share',
+                      onPressed: () => Share.shareXFiles([XFile(file.path)]),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      print("Error opening PDF: $e");
+      // Fallback to sharing
+      await Share.shareXFiles([XFile(file.path)]);
+    }
+  }
+
+  // View downloaded file - MODIFIED to always use in-app PDF viewer
   Future<void> _viewDownloadedFile(File file, String fileName) async {
     String lowerName = fileName.toLowerCase();
     
@@ -336,21 +381,8 @@ class _NotesScreenState extends State<NotesScreen> {
         );
       }
     } else if (lowerName.endsWith('.pdf')) {
-      // View PDF in app using PDF viewer
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => Scaffold(
-            appBar: AppBar(
-              title: Text(fileName),
-              backgroundColor: Colors.red,
-            ),
-            body: PDFView(
-              filePath: file.path,
-            ),
-          ),
-        ),
-      );
+      // Use in-app PDF viewer - THIS WILL WORK ON REDMI!
+      await _viewPDFInApp(file, fileName);
     } else {
       // For other files, share
       await Share.shareXFiles([XFile(file.path)]);
@@ -359,7 +391,6 @@ class _NotesScreenState extends State<NotesScreen> {
 
   Future<void> _viewNote(Note note) async {
     try {
-      // For text notes created in-app
       if (note.content != null && note.content!.isNotEmpty) {
         showDialog(
           context: context,
@@ -383,7 +414,6 @@ class _NotesScreenState extends State<NotesScreen> {
         return;
       }
 
-      // For uploaded files, download from Drive
       final downloadedFile = await _downloadFromDrive(note.title);
       if (downloadedFile != null && mounted) {
         await _viewDownloadedFile(downloadedFile, note.title);
@@ -439,13 +469,11 @@ class _NotesScreenState extends State<NotesScreen> {
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadNotes,
-            tooltip: 'Refresh',
           ),
         ],
       ),
       body: Column(
         children: [
-          // Input Section
           Card(
             margin: const EdgeInsets.all(16),
             elevation: 4,
@@ -463,7 +491,6 @@ class _NotesScreenState extends State<NotesScreen> {
                   ),
                   const SizedBox(height: 16),
                   
-                  // Text note input
                   TextField(
                     controller: _textNoteController,
                     maxLines: 3,
@@ -475,7 +502,6 @@ class _NotesScreenState extends State<NotesScreen> {
                   ),
                   const SizedBox(height: 8),
                   
-                  // Action buttons
                   Row(
                     children: [
                       Expanded(
@@ -521,7 +547,6 @@ class _NotesScreenState extends State<NotesScreen> {
             ),
           ),
           
-          // Notes List
           Expanded(
             child: _notes.isEmpty
                 ? Center(
