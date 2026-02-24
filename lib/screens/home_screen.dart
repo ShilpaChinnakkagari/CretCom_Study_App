@@ -25,8 +25,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   final AuthService _authService = AuthService();
   final DriveService _driveService = DriveService();
   UserProfile? _userProfile;
-  List<Map<String, dynamic>> _allSubjects = [];
-  List<Map<String, dynamic>> _currentYearSubjects = [];
+  List<Map<String, dynamic>> _subjects = [];
   bool _isLoading = true;
   
   String? _navigateYear;
@@ -37,11 +36,19 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
 
+  // Colors for units
+  final Map<String, Color> _unitColors = {
+    'I': Colors.purple,
+    'II': Colors.blue,
+    'III': Colors.green,
+    'IV': Colors.orange,
+    'V': Colors.red,
+  };
+
   @override
   void initState() {
     super.initState();
     
-    // Setup animations
     _animationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
@@ -63,7 +70,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     _animationController.forward();
     
     _loadUserProfile();
-    _loadAllSubjects();
   }
 
   @override
@@ -83,6 +89,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           _userProfile = UserProfile.fromJson(json);
         });
         print("✅ Profile loaded: Year ${_userProfile?.currentYear}, Sem ${_userProfile?.currentSemester}");
+        await _loadSubjectsForCurrentYearSemester();
       } catch (e) {
         print("❌ Error parsing profile: $e");
         _createDefaultProfile();
@@ -105,154 +112,58 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         branch: '',
       );
     });
+    _loadSubjectsForCurrentYearSemester();
   }
 
-  Future<void> _loadAllSubjects() async {
+  Future<void> _loadSubjectsForCurrentYearSemester() async {
+    if (_userProfile == null) {
+      setState(() => _isLoading = false);
+      return;
+    }
+
     final prefs = await SharedPreferences.getInstance();
     final keys = prefs.getKeys();
     
-    List<Map<String, dynamic>> subjects = [];
+    List<Map<String, dynamic>> loadedSubjects = [];
     
-    // Known unit folder IDs for Open CV (from logs)
-    Map<String, Map<String, String>> knownUnitFolders = {
-      '1rvDs5buDI1CYVq9I2u3qsYXhY6hdmSKa': { // Open CV subject folder
-        'I': '1e0KvzJC7clNM54WTD78q5aVh_W6A8IKb',
-        'II': '1Es7UYLb8CEjIDxLOVcrBh6MHrW_SjHtL',
-        'III': '1RcE-uCLFATota0sxY2uoqdh8tOdgRca-',
-        'IV': '1l42M52crMGnbzdMA9r4Upk9_-KaqXR0G',
-        'V': '1cyNg0INdY3Xce7X2IdRF15qCOtHuODNv',
-      }
-    };
+    String targetYear = _userProfile!.currentYear;
+    String targetSemester = _userProfile!.currentSemester;
     
-    // CORRECT unit folder IDs for RS (from your logs)
-    Map<String, String> rsUnitFolders = {
-      'I': '1FwBH7iwBKvZQ4BRXiZAkJ_IKOyJ3Vb6M',
-      'II': '1SaaJxDQwNTRqTFBHsAYSMVIHn1nQFdff',
-      'III': '1THxPyW7ssYDeNYqthrEiVsaw5ZK-ah1H',
-      'IV': '1voQFo7IYHCuN5-LSCepMaCZSaIcfiNqx',
-      'V': '1GLu9XplupRJ37zP9UnujMYXlktS-HJZz',
-    };
+    print("🎯 Loading subjects for Year $targetYear, Semester $targetSemester");
+    
+    // Expected key pattern: subjects_III_I_1L4fJ0KbvqvTYq-wiK8F7guE1Gjcvw8zX
+    String expectedKeyPrefix = 'subjects_${targetYear}_${targetSemester}_';
     
     for (String key in keys) {
-      if (key.startsWith('subjects_')) {
+      // Only load subjects that match current year and semester
+      if (key.startsWith(expectedKeyPrefix)) {
         String? subjectsJson = prefs.getString(key);
         if (subjectsJson != null && subjectsJson.isNotEmpty) {
           try {
             List<dynamic> subjectList = jsonDecode(subjectsJson);
-            for (var subject in subjectList) {
-              String subjectId = subject['id'] ?? '';
-              String subjectFolderId = subject['folderId'] ?? '';
-              String subjectName = subject['name'] ?? 'Unknown';
-              String subjectCode = subject['courseCode'] ?? '000';
+            print("📁 Loading from key: $key (${subjectList.length} subjects)");
+            
+            for (var subjectData in subjectList) {
+              String subjectId = subjectData['id'] ?? '';
+              String subjectFolderId = subjectData['folderId'] ?? '';
+              String subjectName = subjectData['name'] ?? 'Unknown';
+              String subjectCode = subjectData['courseCode'] ?? '000';
               
               print("📚 Processing subject: $subjectName ($subjectCode)");
-              print("   Subject Folder ID: $subjectFolderId");
-              print("   Subject ID: $subjectId");
               
-              List<Map<String, dynamic>> units = [];
-              List<String> unitLetters = ['I', 'II', 'III', 'IV', 'V'];
+              // Load units for this subject
+              List<Map<String, dynamic>> units = await _loadUnitsForSubject(
+                subjectId, subjectFolderId, subjectName, prefs
+              );
               
-              // SPECIAL HANDLING FOR RS - Use exact folder IDs from logs
-              if (subjectName == 'RS') {
-                print("  🔧 Using exact RS unit folders");
-                for (int i = 0; i < unitLetters.length; i++) {
-                  String unit = unitLetters[i];
-                  String unitFolderId = rsUnitFolders[unit]!;
-                  int notesCount = 0;
-                  
-                  String notesKey = 'notes_$unitFolderId';
-                  String? notesJson = prefs.getString(notesKey);
-                  if (notesJson != null && notesJson.isNotEmpty) {
-                    try {
-                      List<dynamic> notesList = jsonDecode(notesJson);
-                      notesCount = notesList.length;
-                      print("  📝 RS Unit $unit has $notesCount notes");
-                    } catch (e) {}
-                  }
-                  
-                  units.add({
-                    'name': 'Unit $unit',
-                    'notesCount': notesCount,
-                    'folderId': unitFolderId,
-                  });
-                }
-              } 
-              // SPECIAL HANDLING FOR OPEN CV - Use known folders
-              else if (subjectName == 'Open CV') {
-                print("  🔧 Using Open CV unit folders");
-                for (int i = 0; i < unitLetters.length; i++) {
-                  String unit = unitLetters[i];
-                  String unitFolderId = knownUnitFolders[subjectFolderId]![unit]!;
-                  int notesCount = 0;
-                  
-                  String notesKey = 'notes_$unitFolderId';
-                  String? notesJson = prefs.getString(notesKey);
-                  if (notesJson != null && notesJson.isNotEmpty) {
-                    try {
-                      List<dynamic> notesList = jsonDecode(notesJson);
-                      notesCount = notesList.length;
-                      print("  📝 Open CV Unit $unit has $notesCount notes");
-                    } catch (e) {}
-                  }
-                  
-                  units.add({
-                    'name': 'Unit $unit',
-                    'notesCount': notesCount,
-                    'folderId': unitFolderId,
-                  });
-                }
-              }
-              // DYNAMIC LOOKUP FOR OTHER SUBJECTS
-              else {
-                for (String unit in unitLetters) {
-                  String? unitFolderId;
-                  int notesCount = 0;
-                  
-                  List<String> possibleKeys = [
-                    'unit_${subjectFolderId}_$unit',
-                    'units_${subjectFolderId}_$unit',
-                    '${subjectFolderId}_$unit',
-                    'unit_${subjectId}_$unit',
-                  ];
-                  
-                  for (String possibleKey in possibleKeys) {
-                    if (prefs.containsKey(possibleKey)) {
-                      var value = prefs.get(possibleKey);
-                      if (value is String) {
-                        unitFolderId = value;
-                        print("  ✅ Found unit $unit folder via key '$possibleKey': $unitFolderId");
-                        break;
-                      }
-                    }
-                  }
-                  
-                  if (unitFolderId != null && unitFolderId.isNotEmpty) {
-                    String notesKey = 'notes_$unitFolderId';
-                    String? notesJson = prefs.getString(notesKey);
-                    if (notesJson != null && notesJson.isNotEmpty) {
-                      try {
-                        List<dynamic> notesList = jsonDecode(notesJson);
-                        notesCount = notesList.length;
-                        print("  📝 Unit $unit has $notesCount notes");
-                      } catch (e) {}
-                    }
-                  }
-                  
-                  units.add({
-                    'name': 'Unit $unit',
-                    'notesCount': notesCount,
-                    'folderId': unitFolderId,
-                  });
-                }
-              }
-              
-              subjects.add({
+              // Add subject to list
+              loadedSubjects.add({
                 'name': subjectName,
                 'code': subjectCode,
                 'folderId': subjectFolderId,
                 'id': subjectId,
-                'year': 'III',
-                'semester': 'II',
+                'year': targetYear,
+                'semester': targetSemester,
                 'units': units,
               });
               
@@ -262,28 +173,227 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             print("❌ Error parsing subjects JSON: $e");
           }
         }
+      } else {
+        if (key.startsWith('subjects_')) {
+          print("⏭️ Skipping subject from different year/semester: $key");
+        }
       }
     }
     
+    // Special case for RS subject (hardcoded folder IDs)
+    if (targetYear == 'III' && targetSemester == 'II') {
+      await _checkAndAddRSSubject(loadedSubjects, prefs);
+    }
+    
+    // Special case for Open subject
+    if (targetYear == 'III' && targetSemester == 'I') {
+      await _checkAndAddOpenSubject(loadedSubjects, prefs);
+    }
+    
     setState(() {
-      _allSubjects = subjects;
-      _currentYearSubjects = List.from(_allSubjects);
+      _subjects = loadedSubjects;
       _isLoading = false;
     });
     
-    print("✅ Loaded ${subjects.length} total subjects");
+    print("🔥 FINAL subjects count: ${_subjects.length}");
+    for (var s in _subjects) {
+      print("   - ${s['name']} with ${s['units']?.length ?? 0} units");
+    }
   }
 
-  void _navigateToSubject(Map<String, dynamic> subject, {bool fromDashboard = true}) {
+  Future<List<Map<String, dynamic>>> _loadUnitsForSubject(
+    String subjectId, 
+    String subjectFolderId, 
+    String subjectName,
+    SharedPreferences prefs
+  ) async {
+    List<Map<String, dynamic>> units = [];
+    List<String> unitLetters = ['I', 'II', 'III', 'IV', 'V'];
+    
+    // Special handling for RS
+    if (subjectName == 'RS') {
+      Map<String, String> rsUnitFolders = {
+        'I': '1FwBH7iwBKvZQ4BRXiZAkJ_IKOyJ3Vb6M',
+        'II': '1SaaJxDQwNTRqTFBHsAYSMVIHn1nQFdff',
+        'III': '1THxPyW7ssYDeNYqthrEiVsaw5ZK-ah1H',
+        'IV': '1voQFo7IYHCuN5-LSCepMaCZSaIcfiNqx',
+        'V': '1GLu9XplupRJ37zP9UnujMYXlktS-HJZz',
+      };
+      
+      for (String unit in unitLetters) {
+        String unitFolderId = rsUnitFolders[unit]!;
+        int notesCount = await _getNotesCount(unitFolderId, prefs);
+        
+        units.add({
+          'name': 'Unit $unit',
+          'notesCount': notesCount,
+          'folderId': unitFolderId,
+        });
+      }
+      return units;
+    }
+    
+    // Special handling for Open CV
+    if (subjectName == 'Open CV' || subjectName == 'Open') {
+      Map<String, String> openUnitFolders = {
+        'I': '1xlBGknJ0JDRo0PxZelW2lj7rb2qYzEq2',
+        'II': '1r2SJgfJTItihIzQd48tAGNwvclAOhafK',
+        'III': '1gh75o9hQj1GT-s9q0BHRH9Tm80DOqqc8',
+        'IV': '18VEw7UPmW833Hfn0hWQ0m3ZFGnprV80R',
+        'V': '17Ogns7Boe9baXS_htaYKq2uVp0hXAO1J',
+      };
+      
+      for (String unit in unitLetters) {
+        String unitFolderId = openUnitFolders[unit]!;
+        int notesCount = await _getNotesCount(unitFolderId, prefs);
+        
+        units.add({
+          'name': 'Unit $unit',
+          'notesCount': notesCount,
+          'folderId': unitFolderId,
+        });
+      }
+      return units;
+    }
+    
+    // For all other subjects - dynamic lookup
+    for (String unit in unitLetters) {
+      String? unitFolderId;
+      int notesCount = 0;
+      
+      // Try to find unit folder ID - FIRST try with subject ID format
+      String unitKey = 'units_${subjectId}_$unit';
+      if (prefs.containsKey(unitKey)) {
+        unitFolderId = prefs.getString(unitKey);
+        print("  ✅ Found unit $unit via subject ID: $unitKey = $unitFolderId");
+      }
+      
+      // If not found, try with folder ID format
+      if (unitFolderId == null) {
+        String fallbackKey = 'units_${subjectFolderId}_$unit';
+        if (prefs.containsKey(fallbackKey)) {
+          unitFolderId = prefs.getString(fallbackKey);
+          print("  ✅ Found unit $unit via folder ID: $fallbackKey = $unitFolderId");
+        }
+      }
+      
+      // Get notes count if folder exists
+      if (unitFolderId != null && unitFolderId.isNotEmpty) {
+        notesCount = await _getNotesCount(unitFolderId, prefs);
+      }
+      
+      units.add({
+        'name': 'Unit $unit',
+        'notesCount': notesCount,
+        'folderId': unitFolderId,
+      });
+    }
+    
+    return units;
+  }
+
+  Future<int> _getNotesCount(String folderId, SharedPreferences prefs) async {
+    try {
+      String notesKey = 'notes_$folderId';
+      String? notesJson = prefs.getString(notesKey);
+      if (notesJson != null && notesJson.isNotEmpty) {
+        List<dynamic> notesList = jsonDecode(notesJson);
+        return notesList.length;
+      }
+    } catch (e) {
+      print("Error getting notes count: $e");
+    }
+    return 0;
+  }
+
+  Future<void> _checkAndAddRSSubject(List<Map<String, dynamic>> subjects, SharedPreferences prefs) async {
+    bool exists = subjects.any((s) => s['name'] == 'RS');
+    if (!exists) {
+      print("📚 Adding RS subject manually");
+      
+      List<Map<String, dynamic>> units = [];
+      Map<String, String> rsUnitFolders = {
+        'I': '1FwBH7iwBKvZQ4BRXiZAkJ_IKOyJ3Vb6M',
+        'II': '1SaaJxDQwNTRqTFBHsAYSMVIHn1nQFdff',
+        'III': '1THxPyW7ssYDeNYqthrEiVsaw5ZK-ah1H',
+        'IV': '1voQFo7IYHCuN5-LSCepMaCZSaIcfiNqx',
+        'V': '1GLu9XplupRJ37zP9UnujMYXlktS-HJZz',
+      };
+      
+      for (String unit in ['I', 'II', 'III', 'IV', 'V']) {
+        String unitFolderId = rsUnitFolders[unit]!;
+        int notesCount = await _getNotesCount(unitFolderId, prefs);
+        
+        units.add({
+          'name': 'Unit $unit',
+          'notesCount': notesCount,
+          'folderId': unitFolderId,
+        });
+      }
+      
+      subjects.add({
+        'name': 'RS',
+        'code': '23CAI111',
+        'folderId': '1ovvB4fhWWrUE1K9s_rwBzXuDhh09ae8I',
+        'id': 'rs_23cai111',
+        'year': 'III',
+        'semester': 'II',
+        'units': units,
+      });
+      
+      print("✅ Added RS subject manually with ${units.length} units");
+    }
+  }
+
+  Future<void> _checkAndAddOpenSubject(List<Map<String, dynamic>> subjects, SharedPreferences prefs) async {
+    bool exists = subjects.any((s) => s['name'] == 'Open');
+    if (!exists) {
+      print("📚 Adding Open subject manually");
+      
+      List<Map<String, dynamic>> units = [];
+      Map<String, String> openUnitFolders = {
+        'I': '1xlBGknJ0JDRo0PxZelW2lj7rb2qYzEq2',
+        'II': '1r2SJgfJTItihIzQd48tAGNwvclAOhafK',
+        'III': '1gh75o9hQj1GT-s9q0BHRH9Tm80DOqqc8',
+        'IV': '18VEw7UPmW833Hfn0hWQ0m3ZFGnprV80R',
+        'V': '17Ogns7Boe9baXS_htaYKq2uVp0hXAO1J',
+      };
+      
+      for (String unit in ['I', 'II', 'III', 'IV', 'V']) {
+        String unitFolderId = openUnitFolders[unit]!;
+        int notesCount = await _getNotesCount(unitFolderId, prefs);
+        
+        units.add({
+          'name': 'Unit $unit',
+          'notesCount': notesCount,
+          'folderId': unitFolderId,
+        });
+      }
+      
+      subjects.add({
+        'name': 'Open',
+        'code': '23CA112',
+        'folderId': '1RAugGlwXZrcb7899dQgGakwU0lhIw-Nv',
+        'id': 'open_23ca112',
+        'year': 'III',
+        'semester': 'I',
+        'units': units,
+      });
+      
+      print("✅ Added Open subject manually with ${units.length} units");
+    }
+  }
+
+  void _navigateToSubject(Map<String, dynamic> subject) {
     final year = AcademicYear(
-      id: fromDashboard ? (_userProfile?.currentYear ?? 'I') : (_navigateYear ?? 'I'),
-      name: fromDashboard ? (_userProfile?.currentYear ?? 'I') : (_navigateYear ?? 'I'),
+      id: _userProfile?.currentYear ?? 'I',
+      name: _userProfile?.currentYear ?? 'I',
       type: _userProfile?.program ?? 'UG'
     );
     
     final semester = Semester(
-      id: fromDashboard ? (_userProfile?.currentSemester ?? 'I') : (_navigateSemester ?? 'I'),
-      name: 'Semester ${fromDashboard ? (_userProfile?.currentSemester ?? 'I') : (_navigateSemester ?? 'I')}'
+      id: _userProfile?.currentSemester ?? 'I',
+      name: 'Semester ${_userProfile?.currentSemester ?? 'I'}'
     );
     
     final subjectObj = Subject(
@@ -303,7 +413,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           subject: subjectObj,
         ),
       ),
-    ).then((_) => _loadAllSubjects());
+    ).then((_) => _loadSubjectsForCurrentYearSemester());
   }
 
   void _navigateToNotes(Map<String, dynamic> subject, Map<String, dynamic> unit) {
@@ -344,24 +454,21 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     ).then((changed) async {
       if (changed == true) {
         print("🔄 Changes detected, reloading subjects...");
-        await _loadAllSubjects();
-        if (mounted) {
-          setState(() {});
-        }
+        await _loadSubjectsForCurrentYearSemester();
       }
     });
   }
 
   Future<void> _quickUpload() async {
-    if (_currentYearSubjects.isEmpty) {
+    if (_subjects.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No subjects available'), backgroundColor: Colors.orange),
       );
       return;
     }
 
-    if (_currentYearSubjects.length == 1) {
-      await _uploadToSubject(_currentYearSubjects.first);
+    if (_subjects.length == 1) {
+      await _uploadToSubject(_subjects.first);
       return;
     }
 
@@ -373,9 +480,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           width: double.maxFinite,
           child: ListView.builder(
             shrinkWrap: true,
-            itemCount: _currentYearSubjects.length,
+            itemCount: _subjects.length,
             itemBuilder: (context, index) {
-              final subject = _currentYearSubjects[index];
+              final subject = _subjects[index];
               return ListTile(
                 title: Text(subject['name']),
                 subtitle: Text(subject['code']),
@@ -430,31 +537,15 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             SnackBar(content: Text('✅ Uploaded to ${subject['name']} - $selectedUnit')),
           );
           
-          await _loadAllSubjects();
-          if (mounted) {
-            setState(() {});
-          }
+          await _loadSubjectsForCurrentYearSemester();
         }
       }
     }
   }
 
-  // Helper method to get different colors for each unit
-  Color _getUnitColor(String unitName, {required bool isDark}) {
-    switch (unitName) {
-      case 'Unit I':
-        return isDark ? const Color(0xFF9C27B0) : Colors.purple.shade500; // Purple
-      case 'Unit II':
-        return isDark ? const Color(0xFF2196F3) : Colors.blue.shade500; // Blue
-      case 'Unit III':
-        return isDark ? const Color(0xFF4CAF50) : Colors.green.shade500; // Green
-      case 'Unit IV':
-        return isDark ? const Color(0xFFFF9800) : Colors.orange.shade500; // Orange
-      case 'Unit V':
-        return isDark ? const Color(0xFFF44336) : Colors.red.shade500; // Red
-      default:
-        return isDark ? const Color(0xFF9C27B0) : Colors.purple.shade500;
-    }
+  Color _getUnitColor(String unitName) {
+    String unitNum = unitName.replaceAll('Unit ', '');
+    return _unitColors[unitNum] ?? Colors.purple;
   }
 
   @override
@@ -475,7 +566,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           ),
         ],
       ),
-      drawer: _buildDrawer(context, user, themeService),
+      drawer: _buildDrawer(context, user, themeService, isDark),
       body: _isLoading
           ? Center(
               child: Column(
@@ -498,7 +589,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             )
           : _userProfile == null
               ? _buildNoProfileView(isDark)
-              : _currentYearSubjects.isEmpty
+              : _subjects.isEmpty
                   ? _buildEmptySubjectsView(isDark)
                   : _buildDashboard(isDark),
     );
@@ -509,8 +600,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       onRefresh: () async {
         _animationController.reset();
         _animationController.forward();
-        await _loadAllSubjects();
-        setState(() {});
+        await _loadSubjectsForCurrentYearSemester();
       },
       color: isDark ? Colors.purple.shade300 : Colors.blue.shade300,
       child: SingleChildScrollView(
@@ -521,80 +611,80 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // SHORTER GREETING CARD - Replace the existing one
-SlideTransition(
-  position: _slideAnimation,
-  child: Container(
-    width: double.infinity,
-    padding: const EdgeInsets.all(16), // Reduced from 24 to 16
-    decoration: BoxDecoration(
-      gradient: LinearGradient(
-        colors: isDark
-            ? [const Color(0xFF6A1B9A), const Color(0xFF4A148C)]
-            : [Colors.blue.shade400, Colors.blue.shade600],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-      ),
-      borderRadius: BorderRadius.circular(16), // Reduced from 20 to 16
-      boxShadow: [
-        BoxShadow(
-          color: (isDark ? Colors.purple.shade900 : Colors.blue.shade200)
-              .withOpacity(0.3),
-          blurRadius: 10,
-          offset: const Offset(0, 3),
-        ),
-      ],
-    ),
-    child: Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Hello, ${_userProfile?.name.split(' ').first ?? 'Student'}! 👋',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 20, // Reduced from 28 to 20
-                  fontWeight: FontWeight.bold,
+              // Greeting Card
+              SlideTransition(
+                position: _slideAnimation,
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: isDark
+                          ? [const Color(0xFF6A1B9A), const Color(0xFF4A148C)]
+                          : [Colors.blue.shade400, Colors.blue.shade600],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: (isDark ? Colors.purple.shade900 : Colors.blue.shade200)
+                            .withOpacity(0.3),
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Hello, ${_userProfile?.name.split(' ').first ?? 'Student'}! 👋',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Year ${_userProfile!.currentYear} • Semester ${_userProfile!.currentSemester}',
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 13,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _userProfile!.branch.isEmpty
+                                  ? '${_userProfile!.academicStart}-${_userProfile!.academicEnd}'
+                                  : _userProfile!.branch,
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Text(
+                          '👋',
+                          style: TextStyle(fontSize: 24),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                'Year ${_userProfile!.currentYear} • Semester ${_userProfile!.currentSemester}',
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 13,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                _userProfile!.branch.isEmpty
-                    ? '${_userProfile!.academicStart}-${_userProfile!.academicEnd}'
-                    : '${_userProfile!.branch}',
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 12,
-                ),
-              ),
-            ],
-          ),
-        ),
-        Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.2),
-            shape: BoxShape.circle,
-          ),
-          child: const Text(
-            '👋',
-            style: TextStyle(fontSize: 24),
-          ),
-        ),
-      ],
-    ),
-  ),
-),
               
               const SizedBox(height: 24),
               
@@ -624,7 +714,7 @@ SlideTransition(
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
-                        '${_currentYearSubjects.length} subjects',
+                        '${_subjects.length} subjects',
                         style: TextStyle(
                           fontSize: 12,
                           color: isDark ? Colors.purple.shade200 : Colors.blue.shade700,
@@ -638,8 +728,8 @@ SlideTransition(
               
               const SizedBox(height: 16),
               
-              // Subjects with ENHANCED COLORFUL UNITS
-              ..._currentYearSubjects.asMap().entries.map((entry) {
+              // Subjects List
+              ..._subjects.asMap().entries.map((entry) {
                 int index = entry.key;
                 var subject = entry.value;
                 
@@ -654,8 +744,8 @@ SlideTransition(
                     ).animate(CurvedAnimation(
                       parent: _animationController,
                       curve: Interval(
-                        0.2 + (index * 0.1),
-                        0.6 + (index * 0.1),
+                        (0.2 + (index * 0.1)).clamp(0.0, 0.8),
+                        (0.6 + (index * 0.1)).clamp(0.0, 1.0),
                         curve: Curves.easeOut,
                       ),
                     )),
@@ -674,7 +764,7 @@ SlideTransition(
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Subject Header - Beautiful gradient
+        // Subject Header
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -697,7 +787,6 @@ SlideTransition(
           ),
           child: Row(
             children: [
-              // Subject icon with letter
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
@@ -743,17 +832,15 @@ SlideTransition(
         
         const SizedBox(height: 8),
         
-        // ENHANCED COLORFUL UNITS - Beautiful cards
+        // Units
         Container(
           margin: const EdgeInsets.only(left: 16),
           child: Column(
             children: subject['units'].map<Widget>((unit) {
-              bool isSynced = unit['folderId'] != null;
-              Color unitColor = _getUnitColor(unit['name'], isDark: isDark);
+              bool isSynced = unit['folderId'] != null && unit['folderId'].isNotEmpty;
+              Color unitColor = _getUnitColor(unit['name']);
               
-              return AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeInOut,
+              return Container(
                 margin: const EdgeInsets.only(bottom: 8),
                 child: Material(
                   color: Colors.transparent,
@@ -763,36 +850,35 @@ SlideTransition(
                     child: Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: isDark ? Colors.grey.shade900 : Colors.white,
+                        color: isSynced
+                            ? (isDark ? Colors.grey.shade900 : Colors.white)
+                            : (isDark ? Colors.grey.shade900 : Colors.white),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
                           color: isSynced
                               ? unitColor.withOpacity(0.3)
                               : (isDark ? Colors.grey.shade800 : Colors.grey.shade200),
+                          width: 1,
                         ),
-                        boxShadow: isSynced
-                            ? [
-                                BoxShadow(
-                                  color: unitColor.withOpacity(0.1),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ]
-                            : null,
+                        boxShadow: [
+                          if (isSynced)
+                            BoxShadow(
+                              color: unitColor.withOpacity(0.1),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                        ],
                       ),
                       child: Row(
                         children: [
-                          // Unit Circle - COLORFUL!
+                          // Unit Circle
                           Container(
                             width: 44,
                             height: 44,
                             decoration: BoxDecoration(
                               gradient: isSynced
                                   ? LinearGradient(
-                                      colors: [
-                                        unitColor,
-                                        unitColor.withOpacity(0.8),
-                                      ],
+                                      colors: [unitColor, unitColor.withOpacity(0.8)],
                                       begin: Alignment.topLeft,
                                       end: Alignment.bottomRight,
                                     )
@@ -844,7 +930,6 @@ SlideTransition(
                                   ),
                                 ),
                                 const SizedBox(height: 4),
-                                // Notes count badge
                                 Container(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 10,
@@ -871,34 +956,13 @@ SlideTransition(
                             ),
                           ),
                           
-                          // Arrow button
+                          // Arrow or Lock
                           if (isSynced)
-                            Container(
-                              decoration: BoxDecoration(
-                                color: unitColor.withOpacity(0.1),
-                                shape: BoxShape.circle,
-                              ),
-                              child: IconButton(
-                                icon: Icon(
-                                  Icons.arrow_forward,
-                                  color: unitColor,
-                                ),
-                                onPressed: () => _navigateToNotes(subject, unit),
-                                tooltip: 'Open notes',
-                              ),
-                            )
+                            Icon(Icons.arrow_forward, color: unitColor)
                           else
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: isDark ? Colors.grey.shade800 : Colors.grey.shade100,
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(
-                                Icons.lock_outline,
-                                size: 20,
-                                color: isDark ? Colors.grey.shade500 : Colors.grey.shade400,
-                              ),
+                            Icon(
+                              Icons.lock_outline,
+                              color: isDark ? Colors.grey.shade500 : Colors.grey.shade400,
                             ),
                         ],
                       ),
@@ -913,9 +977,7 @@ SlideTransition(
     );
   }
 
-  Widget _buildDrawer(BuildContext context, User? user, ThemeService themeService) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    
+  Widget _buildDrawer(BuildContext context, User? user, ThemeService themeService, bool isDark) {
     return Drawer(
       child: ListView(
         padding: EdgeInsets.zero,
@@ -1089,7 +1151,7 @@ SlideTransition(
               trailing: DropdownButton<Map<String, dynamic>>(
                 hint: const Text('Subject'),
                 value: _navigateSubject,
-                items: _allSubjects.map((subject) {
+                items: _subjects.map((subject) {
                   return DropdownMenuItem<Map<String, dynamic>>(
                     value: subject,
                     child: Text('${subject['name']} (${subject['code']})'),
@@ -1101,7 +1163,7 @@ SlideTransition(
                   });
                   if (value != null) {
                     Navigator.pop(context);
-                    _navigateToSubject(value, fromDashboard: false);
+                    _navigateToSubject(value);
                   }
                 },
               ),
@@ -1135,7 +1197,7 @@ SlideTransition(
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => const YearScreen(academicType: 'UG'),
+                  builder: (context) => YearScreen(academicType: _userProfile?.program ?? 'UG'),
                 ),
               );
             },
@@ -1225,11 +1287,20 @@ SlideTransition(
             ),
             const SizedBox(height: 12),
             Text(
-              'Create your first subject to see it here',
+              'Year ${_userProfile!.currentYear}, Semester ${_userProfile!.currentSemester}',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 16,
                 color: isDark ? Colors.white70 : Colors.grey.shade600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Create your first subject in this semester',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                color: isDark ? Colors.white54 : Colors.grey.shade500,
               ),
             ),
             const SizedBox(height: 32),
@@ -1238,9 +1309,9 @@ SlideTransition(
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const YearScreen(academicType: 'UG'),
+                    builder: (context) => YearScreen(academicType: _userProfile?.program ?? 'UG'),
                   ),
-                ).then((_) => _loadAllSubjects());
+                ).then((_) => _loadSubjectsForCurrentYearSemester());
               },
               icon: const Icon(Icons.add),
               label: const Text('Create Subject'),

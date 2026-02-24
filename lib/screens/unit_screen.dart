@@ -33,29 +33,33 @@ class _UnitScreenState extends State<UnitScreen> with SingleTickerProviderStateM
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
 
-  @override
-  void initState() {
-    super.initState();
-    _baseKey = 'units_${widget.subject.name}_${widget.subject.courseCode}'
-        .replaceAll(' ', '_')
-        .replaceAll('(', '')
-        .replaceAll(')', '');
-    
-    // Setup animations
-    _animationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 800),
-    );
-    _fadeAnimation = CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.easeIn,
-    );
-    _animationController.forward();
-    
-    print("🔑 Unit base key: $_baseKey");
-    print("📁 Subject folder ID: ${widget.subject.folderId}");
-    _loadUnits();
-  }
+  // Only showing the key change in initState and _loadUnits
+
+@override
+void initState() {
+  super.initState();
+  // IMPROVED: Use subject ID in base key for consistency with home screen lookup
+  _baseKey = 'units_${widget.subject.id}';  // This matches what home screen looks for
+  // _baseKey = 'units_${widget.subject.name}_${widget.subject.courseCode}' // Old way
+      // .replaceAll(' ', '_')
+      // .replaceAll('(', '')
+      // .replaceAll(')', '');
+  
+  // Setup animations
+  _animationController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 800),
+  );
+  _fadeAnimation = CurvedAnimation(
+    parent: _animationController,
+    curve: Curves.easeIn,
+  );
+  _animationController.forward();
+  
+  print("🔑 Unit base key: $_baseKey");
+  print("📁 Subject folder ID: ${widget.subject.folderId}");
+  _loadUnits();
+}
 
   @override
   void dispose() {

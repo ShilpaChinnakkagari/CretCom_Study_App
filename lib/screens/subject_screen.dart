@@ -33,8 +33,8 @@ class _SubjectScreenState extends State<SubjectScreen> {
   @override
   void initState() {
     super.initState();
-    // Use semester folder ID as permanent storage key
-    _storageKey = 'subjects_${widget.semester.folderId ?? widget.semester.id}';
+    // IMPROVED: Include year and semester in storage key to filter by profile
+    _storageKey = 'subjects_${widget.year.name}_${widget.semester.name}_${widget.semester.folderId ?? widget.semester.id}';
     print("🔑 Subjects storage key: $_storageKey");
     _loadSubjects();
   }
@@ -237,7 +237,7 @@ class _SubjectScreenState extends State<SubjectScreen> {
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          'No subjects yet',
+                          'No subjects yet for ${widget.year.name}, ${widget.semester.name}',
                           style: TextStyle(
                             fontSize: 18,
                             color: Colors.grey.shade600,

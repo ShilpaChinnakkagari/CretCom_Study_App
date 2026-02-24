@@ -31,7 +31,7 @@ class NotesScreen extends StatefulWidget {
   State<NotesScreen> createState() => _NotesScreenState();
 }
 
-class _NotesScreenState extends State<NotesScreen> with SingleTickerProviderStateMixin {
+class _NotesScreenState extends State<NotesScreen> with TickerProviderStateMixin {
   final DriveService _driveService = DriveService();
   final List<Note> _notes = [];
   bool _isLoading = false;
@@ -90,6 +90,14 @@ class _NotesScreenState extends State<NotesScreen> with SingleTickerProviderStat
     ));
     
     _animationController.forward();
+    
+    // Ensure scroll controller is ready
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(0);
+      }
+    });
+    
     _loadNotes();
   }
 
@@ -99,574 +107,6 @@ class _NotesScreenState extends State<NotesScreen> with SingleTickerProviderStat
     _glowController.dispose();
     _scrollController.dispose();
     super.dispose();
-  }
-
-  Future<void> _loadNotes() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final String? notesJson = prefs.getString(_notesStorageKey);
-      
-      if (notesJson != null && notesJson.isNotEmpty) {
-        final List<dynamic> jsonList = jsonDecode(notesJson);
-        setState(() {
-          _notes.clear();
-          _notes.addAll(jsonList.map((json) => Note.fromJson(json)).toList());
-        });
-      }
-    } catch (e) {
-      print("Error loading notes: $e");
-    }
-  }
-
-  Future<void> _saveNotes() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final String notesJson = jsonEncode(_notes.map((note) => note.toJson()).toList());
-      await prefs.setString(_notesStorageKey, notesJson);
-    } catch (e) {
-      print("Error saving notes: $e");
-    }
-  }
-
-  Future<String?> _showTitleDialog(String action, {String? initialValue}) {
-    _noteTitleController.text = initialValue ?? '';
-    return showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('$action Note'),
-        content: TextField(
-          controller: _noteTitleController,
-          decoration: const InputDecoration(
-            labelText: 'Note Title',
-            hintText: 'e.g., 1M, 2M, Important Formulas',
-            border: OutlineInputBorder(),
-          ),
-          autofocus: true,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              if (_noteTitleController.text.isNotEmpty) {
-                Navigator.pop(context, _noteTitleController.text);
-              }
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _saveTextNote() async {
-    if (_textNoteController.text.isEmpty) return;
-
-    String? title = await _showTitleDialog('Save Text');
-    if (title == null) return;
-
-    try {
-      setState(() => _isLoading = true);
-      
-      String fileName = '${title.replaceAll(' ', '_')}_${DateTime.now().millisecondsSinceEpoch}.txt';
-      String tempPath = '${Directory.systemTemp.path}/$fileName';
-      File tempFile = File(tempPath);
-      await tempFile.writeAsString(_textNoteController.text);
-      
-      if (widget.unit.folderId != null) {
-        bool success = await _driveService.uploadFile(
-          tempPath,
-          fileName,
-          widget.unit.folderId!,
-        );
-        
-        if (success && mounted) {
-          setState(() {
-            _notes.add(Note(
-              id: DateTime.now().toString(),
-              title: title,
-              content: _textNoteController.text,
-              fileId: widget.unit.folderId,
-              createdAt: DateTime.now(),
-            ));
-          });
-          
-          _textNoteController.clear();
-          await _saveNotes();
-          
-          // Scroll to bottom to show new note
-          Future.delayed(const Duration(milliseconds: 100), () {
-            _scrollController.animateTo(
-              _scrollController.position.maxScrollExtent,
-              duration: const Duration(milliseconds: 500),
-              curve: Curves.easeOut,
-            );
-          });
-          
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('✅ "$title" created'),
-              backgroundColor: Colors.green,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red),
-      );
-    } finally {
-      setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _uploadImage() async {
-    try {
-      final XFile? image = await _imagePicker.pickImage(
-        source: ImageSource.gallery,
-        maxWidth: 1920,
-        maxHeight: 1080,
-        imageQuality: 85,
-      );
-
-      if (image == null) return;
-
-      String? title = await _showTitleDialog('Upload Image');
-      if (title == null) return;
-
-      setState(() => _isLoading = true);
-      
-      File file = File(image.path);
-      String fileName = '${title.replaceAll(' ', '_')}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      
-      if (widget.unit.folderId != null) {
-        bool success = await _driveService.uploadFile(
-          file.path,
-          fileName,
-          widget.unit.folderId!,
-        );
-        
-        if (success && mounted) {
-          setState(() {
-            _notes.add(Note(
-              id: DateTime.now().toString(),
-              title: title,
-              fileId: widget.unit.folderId,
-              createdAt: DateTime.now(),
-            ));
-          });
-          
-          await _saveNotes();
-          
-          Future.delayed(const Duration(milliseconds: 100), () {
-            _scrollController.animateTo(
-              _scrollController.position.maxScrollExtent,
-              duration: const Duration(milliseconds: 500),
-              curve: Curves.easeOut,
-            );
-          });
-          
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('✅ Image "$title" uploaded'),
-              backgroundColor: Colors.orange,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red),
-      );
-    } finally {
-      setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _captureImage() async {
-    try {
-      final XFile? image = await _imagePicker.pickImage(source: ImageSource.camera);
-
-      if (image == null) return;
-
-      String? title = await _showTitleDialog('Capture Image');
-      if (title == null) return;
-
-      setState(() => _isLoading = true);
-      
-      File file = File(image.path);
-      String fileName = '${title.replaceAll(' ', '_')}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      
-      if (widget.unit.folderId != null) {
-        bool success = await _driveService.uploadFile(
-          file.path,
-          fileName,
-          widget.unit.folderId!,
-        );
-        
-        if (success && mounted) {
-          setState(() {
-            _notes.add(Note(
-              id: DateTime.now().toString(),
-              title: title,
-              fileId: widget.unit.folderId,
-              createdAt: DateTime.now(),
-            ));
-          });
-          
-          await _saveNotes();
-          
-          Future.delayed(const Duration(milliseconds: 100), () {
-            _scrollController.animateTo(
-              _scrollController.position.maxScrollExtent,
-              duration: const Duration(milliseconds: 500),
-              curve: Curves.easeOut,
-            );
-          });
-          
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('✅ Image "$title" captured'),
-              backgroundColor: Colors.purple,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red),
-      );
-    } finally {
-      setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _uploadFile() async {
-    try {
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['pdf', 'doc', 'docx', 'txt', 'jpg', 'jpeg', 'png'],
-      );
-
-      if (result == null) return;
-
-      String? title = await _showTitleDialog('Upload File');
-      if (title == null) return;
-
-      setState(() => _isLoading = true);
-      
-      File file = File(result.files.single.path!);
-      String originalFileName = result.files.single.name;
-      String extension = originalFileName.split('.').last;
-      String fileName = '${title.replaceAll(' ', '_')}_${DateTime.now().millisecondsSinceEpoch}.$extension';
-      
-      if (widget.unit.folderId != null) {
-        bool success = await _driveService.uploadFile(
-          file.path,
-          fileName,
-          widget.unit.folderId!,
-        );
-        
-        if (success && mounted) {
-          setState(() {
-            _notes.add(Note(
-              id: DateTime.now().toString(),
-              title: title,
-              fileId: widget.unit.folderId,
-              createdAt: DateTime.now(),
-            ));
-          });
-          
-          await _saveNotes();
-          
-          Future.delayed(const Duration(milliseconds: 100), () {
-            _scrollController.animateTo(
-              _scrollController.position.maxScrollExtent,
-              duration: const Duration(milliseconds: 500),
-              curve: Curves.easeOut,
-            );
-          });
-          
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('✅ File "$title" uploaded'),
-              backgroundColor: Colors.green,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red),
-      );
-    } finally {
-      setState(() => _isLoading = false);
-    }
-  }
-
-  Future<File?> _downloadFromDrive(String fileName) async {
-    try {
-      if (!mounted) return null;
-      
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const Center(child: CircularProgressIndicator()),
-      );
-
-      final driveApi = await _driveService.getDriveApi();
-      if (driveApi == null) {
-        if (mounted) Navigator.pop(context);
-        throw Exception('Not authenticated');
-      }
-
-      final searchResult = await driveApi.files.list(
-        q: "name='$fileName' and '${widget.unit.folderId}' in parents and trashed=false",
-        spaces: 'drive',
-      );
-
-      if (searchResult.files == null || searchResult.files!.isEmpty) {
-        if (mounted) Navigator.pop(context);
-        throw Exception('File not found');
-      }
-
-      final fileMetadata = searchResult.files!.first;
-      
-      final downloadDir = await getApplicationDocumentsDirectory();
-      final downloadPath = '${downloadDir.path}/$fileName';
-      final downloadFile = File(downloadPath);
-
-      final response = await driveApi.files.get(
-        fileMetadata.id!,
-        downloadOptions: drive.DownloadOptions.fullMedia,
-      );
-
-      if (response is drive.Media) {
-        final sink = downloadFile.openWrite();
-        await response.stream.pipe(sink);
-        await sink.close();
-        
-        if (mounted) Navigator.pop(context);
-        return downloadFile;
-      } else {
-        if (mounted) Navigator.pop(context);
-        throw Exception('Unexpected response');
-      }
-    } catch (e) {
-      if (mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Download failed: $e'), backgroundColor: Colors.red),
-        );
-      }
-      return null;
-    }
-  }
-
-  // View DOC/DOCX files using WebView
-  Future<void> _viewDocument(File file, String fileName) async {
-    try {
-      final controller = WebViewController()
-        ..loadFile(file.path)
-        ..setJavaScriptMode(JavaScriptMode.unrestricted)
-        ..setNavigationDelegate(
-          NavigationDelegate(
-            onPageFinished: (String url) {
-              print("Document loaded successfully");
-            },
-            onWebResourceError: (WebResourceError error) {
-              print("Error loading document: $error");
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Error loading document'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-            },
-          ),
-        );
-      
-      await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => Scaffold(
-            appBar: AppBar(
-              title: Text(
-                fileName,
-                style: const TextStyle(fontSize: 16),
-              ),
-              backgroundColor: Colors.blue.shade700,
-              foregroundColor: Colors.white,
-            ),
-            body: WebViewWidget(controller: controller),
-          ),
-        ),
-      );
-    } catch (e) {
-      print("Error opening document: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Could not open document. Sharing instead.'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      await Share.shareXFiles([XFile(file.path)]);
-    }
-  }
-
-  Future<void> _viewPDFInApp(File file, String fileName) async {
-    try {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => Scaffold(
-            appBar: AppBar(
-              title: Text(fileName, style: const TextStyle(fontSize: 16)),
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
-            body: PDFView(
-              filePath: file.path,
-              enableSwipe: true,
-              swipeHorizontal: true,
-              autoSpacing: true,
-            ),
-          ),
-        ),
-      );
-    } catch (e) {
-      await Share.shareXFiles([XFile(file.path)]);
-    }
-  }
-
-  Future<void> _viewDownloadedFile(File file, String fileName) async {
-    String lowerName = fileName.toLowerCase();
-    
-    if (lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg') || lowerName.endsWith('.png')) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => Scaffold(
-            appBar: AppBar(
-              title: Text(fileName),
-              backgroundColor: Colors.black,
-            ),
-            body: Center(
-              child: InteractiveViewer(
-                panEnabled: true,
-                minScale: 0.5,
-                maxScale: 4.0,
-                child: Image.file(file),
-              ),
-            ),
-          ),
-        ),
-      );
-    } else if (lowerName.endsWith('.txt')) {
-      try {
-        String content = await file.readAsString();
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: Text(fileName),
-            content: Container(
-              width: double.maxFinite,
-              height: 400,
-              child: SingleChildScrollView(child: Text(content)),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Close'),
-              ),
-            ],
-          ),
-        );
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error reading file: $e'), backgroundColor: Colors.red),
-        );
-      }
-    } else if (lowerName.endsWith('.pdf')) {
-      await _viewPDFInApp(file, fileName);
-    } else if (lowerName.endsWith('.doc') || lowerName.endsWith('.docx')) {
-      await _viewDocument(file, fileName);
-    } else {
-      await Share.shareXFiles([XFile(file.path)]);
-    }
-  }
-
-  Future<void> _viewNote(Note note) async {
-    try {
-      if (note.content != null && note.content!.isNotEmpty) {
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: Text(note.title),
-            content: Container(
-              width: double.maxFinite,
-              height: 400,
-              child: SingleChildScrollView(child: Text(note.content!)),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Close'),
-              ),
-            ],
-          ),
-        );
-        return;
-      }
-
-      final downloadedFile = await _downloadFromDrive(note.title);
-      if (downloadedFile != null && mounted) {
-        await _viewDownloadedFile(downloadedFile, note.title);
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error opening note: $e'), backgroundColor: Colors.red),
-      );
-    }
-  }
-
-  Future<void> _deleteNote(Note note) async {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Note'),
-        content: Text('Delete "${note.title}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              setState(() => _notes.remove(note));
-              await _saveNotes();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('✅ Note deleted'), backgroundColor: Colors.orange),
-              );
-            },
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Color _getUnitColor() {
-    String unitNum = widget.unit.name.replaceAll('Unit ', '');
-    return _unitColors[unitNum] ?? Colors.purple;
   }
 
   @override
@@ -872,42 +312,42 @@ class _NotesScreenState extends State<NotesScreen> with SingleTickerProviderStat
             
             // Notes List with Scrollbar
             Expanded(
-              child: Scrollbar(
-                controller: _scrollController,
-                thumbVisibility: true,
-                thickness: 6,
-                radius: const Radius.circular(10),
-                child: _notes.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.note_alt,
-                              size: 80,
-                              color: unitColor.withOpacity(0.3),
+              child: _notes.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.note_alt,
+                            size: 80,
+                            color: unitColor.withOpacity(0.3),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'No notes yet',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: unitColor.withOpacity(0.7),
                             ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'No notes yet',
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: unitColor.withOpacity(0.7),
-                              ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Add your first note above!',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey.shade500,
                             ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Add your first note above!',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey.shade500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    : ListView.builder(
+                          ),
+                        ],
+                      ),
+                    )
+                  : Scrollbar(
+                      controller: _scrollController,
+                      thumbVisibility: true,
+                      thickness: 6,
+                      radius: const Radius.circular(10),
+                      child: ListView.builder(
                         controller: _scrollController,
                         padding: const EdgeInsets.all(16),
                         itemCount: _notes.length,
@@ -932,8 +372,8 @@ class _NotesScreenState extends State<NotesScreen> with SingleTickerProviderStat
                             ).animate(CurvedAnimation(
                               parent: _animationController,
                               curve: Interval(
-                                0.2 + (index * 0.1),
-                                0.6 + (index * 0.1),
+                                (0.2 + (index * 0.1)).clamp(0.0, 0.8),
+                                (0.6 + (index * 0.1)).clamp(0.0, 1.0),
                                 curve: Curves.easeOut,
                               ),
                             )),
@@ -1081,12 +521,678 @@ class _NotesScreenState extends State<NotesScreen> with SingleTickerProviderStat
                           );
                         },
                       ),
-              ),
+                    ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _loadNotes() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String? notesJson = prefs.getString(_notesStorageKey);
+      
+      if (notesJson != null && notesJson.isNotEmpty) {
+        final List<dynamic> jsonList = jsonDecode(notesJson);
+        setState(() {
+          _notes.clear();
+          _notes.addAll(jsonList.map((json) => Note.fromJson(json)).toList());
+        });
+      }
+    } catch (e) {
+      print("Error loading notes: $e");
+    }
+  }
+
+  Future<void> _saveNotes() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String notesJson = jsonEncode(_notes.map((note) => note.toJson()).toList());
+      await prefs.setString(_notesStorageKey, notesJson);
+    } catch (e) {
+      print("Error saving notes: $e");
+    }
+  }
+
+  Future<String?> _showTitleDialog(String action, {String? initialValue}) {
+    _noteTitleController.text = initialValue ?? '';
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('$action Note'),
+        content: TextField(
+          controller: _noteTitleController,
+          decoration: const InputDecoration(
+            labelText: 'Note Title',
+            hintText: 'e.g., 1M, 2M, Important Formulas',
+            border: OutlineInputBorder(),
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              if (_noteTitleController.text.isNotEmpty) {
+                Navigator.pop(context, _noteTitleController.text);
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _saveTextNote() async {
+    if (_textNoteController.text.isEmpty) return;
+
+    String? title = await _showTitleDialog('Save Text');
+    if (title == null) return;
+
+    try {
+      setState(() => _isLoading = true);
+      
+      String fileName = '${title.replaceAll(' ', '_')}_${DateTime.now().millisecondsSinceEpoch}.txt';
+      String tempPath = '${Directory.systemTemp.path}/$fileName';
+      File tempFile = File(tempPath);
+      await tempFile.writeAsString(_textNoteController.text);
+      
+      if (widget.unit.folderId != null) {
+        bool success = await _driveService.uploadFile(
+          tempPath,
+          fileName,
+          widget.unit.folderId!,
+        );
+        
+        if (success && mounted) {
+          setState(() {
+            _notes.add(Note(
+              id: DateTime.now().toString(),
+              title: title,
+              content: _textNoteController.text,
+              fileId: widget.unit.folderId,
+              createdAt: DateTime.now(),
+            ));
+          });
+          
+          _textNoteController.clear();
+          await _saveNotes();
+          
+          // Scroll to bottom to show new note
+          Future.delayed(const Duration(milliseconds: 100), () {
+            if (_scrollController.hasClients) {
+              _scrollController.animateTo(
+                _scrollController.position.maxScrollExtent,
+                duration: const Duration(milliseconds: 500),
+                curve: Curves.easeOut,
+              );
+            }
+          });
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✅ "$title" created'),
+              backgroundColor: Colors.green,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _uploadImage() async {
+    try {
+      final XFile? image = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1920,
+        maxHeight: 1080,
+        imageQuality: 85,
+      );
+
+      if (image == null) return;
+
+      String? title = await _showTitleDialog('Upload Image');
+      if (title == null) return;
+
+      setState(() => _isLoading = true);
+      
+      File file = File(image.path);
+      String fileName = '${title.replaceAll(' ', '_')}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      
+      if (widget.unit.folderId != null) {
+        bool success = await _driveService.uploadFile(
+          file.path,
+          fileName,
+          widget.unit.folderId!,
+        );
+        
+        if (success && mounted) {
+          setState(() {
+            _notes.add(Note(
+              id: DateTime.now().toString(),
+              title: title,
+              fileId: widget.unit.folderId,
+              createdAt: DateTime.now(),
+            ));
+          });
+          
+          await _saveNotes();
+          
+          Future.delayed(const Duration(milliseconds: 100), () {
+            if (_scrollController.hasClients) {
+              _scrollController.animateTo(
+                _scrollController.position.maxScrollExtent,
+                duration: const Duration(milliseconds: 500),
+                curve: Curves.easeOut,
+              );
+            }
+          });
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✅ Image "$title" uploaded'),
+              backgroundColor: Colors.orange,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _captureImage() async {
+    try {
+      final XFile? image = await _imagePicker.pickImage(source: ImageSource.camera);
+
+      if (image == null) return;
+
+      String? title = await _showTitleDialog('Capture Image');
+      if (title == null) return;
+
+      setState(() => _isLoading = true);
+      
+      File file = File(image.path);
+      String fileName = '${title.replaceAll(' ', '_')}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      
+      if (widget.unit.folderId != null) {
+        bool success = await _driveService.uploadFile(
+          file.path,
+          fileName,
+          widget.unit.folderId!,
+        );
+        
+        if (success && mounted) {
+          setState(() {
+            _notes.add(Note(
+              id: DateTime.now().toString(),
+              title: title,
+              fileId: widget.unit.folderId,
+              createdAt: DateTime.now(),
+            ));
+          });
+          
+          await _saveNotes();
+          
+          Future.delayed(const Duration(milliseconds: 100), () {
+            if (_scrollController.hasClients) {
+              _scrollController.animateTo(
+                _scrollController.position.maxScrollExtent,
+                duration: const Duration(milliseconds: 500),
+                curve: Curves.easeOut,
+              );
+            }
+          });
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✅ Image "$title" captured'),
+              backgroundColor: Colors.purple,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _uploadFile() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf', 'doc', 'docx', 'txt', 'jpg', 'jpeg', 'png'],
+      );
+
+      if (result == null) return;
+
+      String? title = await _showTitleDialog('Upload File');
+      if (title == null) return;
+
+      setState(() => _isLoading = true);
+      
+      File file = File(result.files.single.path!);
+      String originalFileName = result.files.single.name;
+      String extension = originalFileName.split('.').last;
+      String fileName = '${title.replaceAll(' ', '_')}_${DateTime.now().millisecondsSinceEpoch}.$extension';
+      
+      if (widget.unit.folderId != null) {
+        bool success = await _driveService.uploadFile(
+          file.path,
+          fileName,
+          widget.unit.folderId!,
+        );
+        
+        if (success && mounted) {
+          setState(() {
+            _notes.add(Note(
+              id: DateTime.now().toString(),
+              title: title,
+              fileId: widget.unit.folderId,
+              createdAt: DateTime.now(),
+            ));
+          });
+          
+          await _saveNotes();
+          
+          Future.delayed(const Duration(milliseconds: 100), () {
+            if (_scrollController.hasClients) {
+              _scrollController.animateTo(
+                _scrollController.position.maxScrollExtent,
+                duration: const Duration(milliseconds: 500),
+                curve: Curves.easeOut,
+              );
+            }
+          });
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✅ File "$title" uploaded'),
+              backgroundColor: Colors.green,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  // FIXED: Better error handling for download
+  Future<File?> _downloadFromDrive(String fileName) async {
+    try {
+      if (!mounted) return null;
+      
+      // Show loading dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+
+      print("📥 Downloading file: $fileName");
+      print("📁 From folder: ${widget.unit.folderId}");
+
+      final driveApi = await _driveService.getDriveApi();
+      if (driveApi == null) {
+        if (mounted) Navigator.pop(context);
+        throw Exception('Not authenticated with Google Drive');
+      }
+
+      // Search for the file in the specific folder
+      final searchResult = await driveApi.files.list(
+        q: "name='$fileName' and '${widget.unit.folderId}' in parents and trashed=false",
+        spaces: 'drive',
+        $fields: 'files(id, name, mimeType)',
+      );
+
+      if (searchResult.files == null || searchResult.files!.isEmpty) {
+        if (mounted) Navigator.pop(context);
+        throw Exception('File not found in Drive');
+      }
+
+      final fileMetadata = searchResult.files!.first;
+      print("✅ Found file: ${fileMetadata.name} (${fileMetadata.id})");
+      
+      final downloadDir = await getApplicationDocumentsDirectory();
+      final downloadPath = '${downloadDir.path}/${fileMetadata.name}';
+      final downloadFile = File(downloadPath);
+
+      // Download the file
+      final response = await driveApi.files.get(
+        fileMetadata.id!,
+        downloadOptions: drive.DownloadOptions.fullMedia,
+      );
+
+      if (response is drive.Media) {
+        final sink = downloadFile.openWrite();
+        await response.stream.pipe(sink);
+        await sink.close();
+        
+        if (mounted) Navigator.pop(context);
+        print("✅ Downloaded to: $downloadPath");
+        return downloadFile;
+      } else {
+        if (mounted) Navigator.pop(context);
+        throw Exception('Unexpected response type');
+      }
+    } catch (e) {
+      print("❌ Download failed: $e");
+      if (mounted) {
+        Navigator.pop(context); // Close loading dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Download failed: ${e.toString()}'), 
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+      return null;
+    }
+  }
+
+  Future<void> _viewNote(Note note) async {
+  try {
+    // If it's a text note with content, show directly
+    if (note.content != null && note.content!.isNotEmpty) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(note.title),
+          content: Container(
+            width: double.maxFinite,
+            height: 400,
+            child: SingleChildScrollView(child: Text(note.content!)),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    // For file notes, download from Drive
+    print("📂 Opening note: ${note.title}");
+    
+    // Show loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    final driveApi = await _driveService.getDriveApi();
+    if (driveApi == null) {
+      if (mounted) Navigator.pop(context);
+      throw Exception('Not authenticated');
+    }
+
+    // STEP 1: Try exact match first
+    print("🔍 Searching for file with title: ${note.title}");
+    String searchQuery = "name contains '${note.title}' and '${widget.unit.folderId}' in parents and trashed=false";
+    
+    var searchResult = await driveApi.files.list(
+      q: searchQuery,
+      spaces: 'drive',
+      $fields: 'files(id, name, mimeType)',
+    );
+
+    // STEP 2: If no exact match, try more flexible search
+    if (searchResult.files == null || searchResult.files!.isEmpty) {
+      print("⚠️ No exact match, trying flexible search...");
+      
+      // Remove special characters and try again
+      String cleanTitle = note.title.replaceAll(' ', '_').replaceAll('-', '_');
+      searchQuery = "name contains '$cleanTitle' and '${widget.unit.folderId}' in parents and trashed=false";
+      
+      searchResult = await driveApi.files.list(
+        q: searchQuery,
+        spaces: 'drive',
+        $fields: 'files(id, name, mimeType)',
+      );
+    }
+
+    if (searchResult.files == null || searchResult.files!.isEmpty) {
+      if (mounted) Navigator.pop(context);
+      throw Exception('File not found in Drive');
+    }
+
+    // Get the first matching file
+    final fileMetadata = searchResult.files!.first;
+    print("✅ Found file: ${fileMetadata.name}");
+    
+    // Download the file
+    final downloadDir = await getApplicationDocumentsDirectory();
+    final downloadPath = '${downloadDir.path}/${fileMetadata.name ?? 'file'}';
+    final downloadFile = File(downloadPath);
+
+    final response = await driveApi.files.get(
+      fileMetadata.id!,
+      downloadOptions: drive.DownloadOptions.fullMedia,
+    );
+
+    if (response is drive.Media) {
+      final sink = downloadFile.openWrite();
+      await response.stream.pipe(sink);
+      await sink.close();
+      
+      if (mounted) Navigator.pop(context); // Close loading
+      
+      // Open based on file type - FIXED NULL SAFETY
+      String fileName = fileMetadata.name?.toLowerCase() ?? '';
+      String displayName = fileMetadata.name ?? 'Unknown';
+      
+      if (fileName.endsWith('.pdf')) {
+        await _viewPDFInApp(downloadFile, displayName);
+      } else if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg') || fileName.endsWith('.png')) {
+        await _viewImageFile(downloadFile, displayName);
+      } else if (fileName.endsWith('.txt')) {
+        String content = await downloadFile.readAsString();
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: Text(displayName),
+              content: Container(
+                width: double.maxFinite,
+                height: 400,
+                child: SingleChildScrollView(child: Text(content)),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Close'),
+                ),
+              ],
+            ),
+          );
+        }
+      } else if (fileName.endsWith('.doc') || fileName.endsWith('.docx')) {
+        await _viewDocument(downloadFile, displayName);
+      } else {
+        // For other files, share
+        await Share.shareXFiles([XFile(downloadFile.path)]);
+      }
+    }
+  } catch (e) {
+    print("❌ Error opening note: $e");
+    if (mounted) {
+      Navigator.pop(context); // Close loading if open
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ${e.toString()}'), 
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+}
+
+  // View DOC/DOCX files using WebView
+  Future<void> _viewDocument(File file, String fileName) async {
+    try {
+      final controller = WebViewController()
+        ..loadFile(file.path)
+        ..setJavaScriptMode(JavaScriptMode.unrestricted)
+        ..setNavigationDelegate(
+          NavigationDelegate(
+            onPageFinished: (String url) {
+              print("Document loaded successfully");
+            },
+            onWebResourceError: (WebResourceError error) {
+              print("Error loading document: $error");
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Error loading document'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            },
+          ),
+        );
+      
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => Scaffold(
+            appBar: AppBar(
+              title: Text(
+                fileName,
+                style: const TextStyle(fontSize: 16),
+              ),
+              backgroundColor: Colors.blue.shade700,
+              foregroundColor: Colors.white,
+            ),
+            body: WebViewWidget(controller: controller),
+          ),
+        ),
+      );
+    } catch (e) {
+      print("Error opening document: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not open document. Sharing instead.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      await Share.shareXFiles([XFile(file.path)]);
+    }
+  }
+
+  Future<void> _viewPDFInApp(File file, String fileName) async {
+    try {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => Scaffold(
+            appBar: AppBar(
+              title: Text(fileName, style: const TextStyle(fontSize: 16)),
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            body: PDFView(
+              filePath: file.path,
+              enableSwipe: true,
+              swipeHorizontal: true,
+              autoSpacing: true,
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      await Share.shareXFiles([XFile(file.path)]);
+    }
+  }
+
+  // Renamed to avoid duplicate
+  Future<void> _viewImageFile(File file, String fileName) async {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => Scaffold(
+          appBar: AppBar(
+            title: Text(fileName),
+            backgroundColor: Colors.black,
+          ),
+          body: Center(
+            child: InteractiveViewer(
+              panEnabled: true,
+              minScale: 0.5,
+              maxScale: 4.0,
+              child: Image.file(file),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _deleteNote(Note note) async {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Note'),
+        content: Text('Delete "${note.title}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              setState(() => _notes.remove(note));
+              await _saveNotes();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('✅ Note deleted'), backgroundColor: Colors.orange),
+              );
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _getUnitColor() {
+    String unitNum = widget.unit.name.replaceAll('Unit ', '');
+    return _unitColors[unitNum] ?? Colors.purple;
   }
 
   Widget _buildActionButton({
