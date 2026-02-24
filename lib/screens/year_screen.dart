@@ -121,7 +121,7 @@ class _YearScreenState extends State<YearScreen> {
       }
       
       // Create year folder
-      final folderId = await _driveService.createYearFolder('Year ${year.name}');
+      final folderId = await _driveService.createYearFolder(year.name, widget.academicType);
       
       if (folderId != null) {
         setState(() {

@@ -54,7 +54,7 @@ dependencies:
 
 
   provider: ^6.1.2
-  open_file: ^3.5.11
+  open_file: ^3.3.2
 
 dev_dependencies:
   flutter_test:

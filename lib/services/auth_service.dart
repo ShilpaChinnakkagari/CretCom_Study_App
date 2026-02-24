@@ -85,7 +85,7 @@ class AuthService {
           print("Still no Google user - please sign in again");
           return null;
         }
-        print("Got Google user silently: ${currentUser.email}");
+        print("✅ Got Google user silently: ${currentUser.email}");
         
         final authHeaders = await currentUser.authHeaders;
         final client = GoogleAuthClient(authHeaders);
@@ -107,7 +107,46 @@ class AuthService {
   
   // Get the current Google user
   Future<GoogleSignInAccount?> getCurrentGoogleUser() async {
-    return _googleSignIn.currentUser ?? await _googleSignIn.signInSilently();
+    // If there's a current user, return it
+    if (_googleSignIn.currentUser != null) {
+      return _googleSignIn.currentUser;
+    }
+    
+    // Try to sign in silently
+    try {
+      return await _googleSignIn.signInSilently();
+    } catch (e) {
+      print('Error signing in silently: $e');
+      return null;
+    }
+  }
+  
+  // Force sign in (use this when API calls fail)
+  Future<User?> forceSignIn() async {
+    try {
+      print("Forcing sign in...");
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      
+      if (googleUser == null) {
+        return null;
+      }
+      
+      final GoogleSignInAuthentication googleAuth = 
+          await googleUser.authentication;
+          
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+      
+      final UserCredential userCredential = 
+          await _auth.signInWithCredential(credential);
+          
+      return userCredential.user;
+    } catch (e) {
+      print('Error forcing sign in: $e');
+      return null;
+    }
   }
 }
 

@@ -36,7 +36,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
 
-  // Colors for units
   final Map<String, Color> _unitColors = {
     'I': Colors.purple,
     'II': Colors.blue,
@@ -131,11 +130,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     
     print("🎯 Loading subjects for Year $targetYear, Semester $targetSemester");
     
-    // Expected key pattern: subjects_III_I_1L4fJ0KbvqvTYq-wiK8F7guE1Gjcvw8zX
     String expectedKeyPrefix = 'subjects_${targetYear}_${targetSemester}_';
     
     for (String key in keys) {
-      // Only load subjects that match current year and semester
       if (key.startsWith(expectedKeyPrefix)) {
         String? subjectsJson = prefs.getString(key);
         if (subjectsJson != null && subjectsJson.isNotEmpty) {
@@ -151,12 +148,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               
               print("📚 Processing subject: $subjectName ($subjectCode)");
               
-              // Load units for this subject
               List<Map<String, dynamic>> units = await _loadUnitsForSubject(
                 subjectId, subjectFolderId, subjectName, prefs
               );
               
-              // Add subject to list
               loadedSubjects.add({
                 'name': subjectName,
                 'code': subjectCode,
@@ -180,15 +175,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       }
     }
     
-    // Special case for RS subject (hardcoded folder IDs)
-    if (targetYear == 'III' && targetSemester == 'II') {
-      await _checkAndAddRSSubject(loadedSubjects, prefs);
-    }
-    
-    // Special case for Open subject
-    if (targetYear == 'III' && targetSemester == 'I') {
-      await _checkAndAddOpenSubject(loadedSubjects, prefs);
-    }
+    // REMOVED static subject additions
     
     setState(() {
       _subjects = loadedSubjects;
@@ -210,65 +197,16 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     List<Map<String, dynamic>> units = [];
     List<String> unitLetters = ['I', 'II', 'III', 'IV', 'V'];
     
-    // Special handling for RS
-    if (subjectName == 'RS') {
-      Map<String, String> rsUnitFolders = {
-        'I': '1FwBH7iwBKvZQ4BRXiZAkJ_IKOyJ3Vb6M',
-        'II': '1SaaJxDQwNTRqTFBHsAYSMVIHn1nQFdff',
-        'III': '1THxPyW7ssYDeNYqthrEiVsaw5ZK-ah1H',
-        'IV': '1voQFo7IYHCuN5-LSCepMaCZSaIcfiNqx',
-        'V': '1GLu9XplupRJ37zP9UnujMYXlktS-HJZz',
-      };
-      
-      for (String unit in unitLetters) {
-        String unitFolderId = rsUnitFolders[unit]!;
-        int notesCount = await _getNotesCount(unitFolderId, prefs);
-        
-        units.add({
-          'name': 'Unit $unit',
-          'notesCount': notesCount,
-          'folderId': unitFolderId,
-        });
-      }
-      return units;
-    }
-    
-    // Special handling for Open CV
-    if (subjectName == 'Open CV' || subjectName == 'Open') {
-      Map<String, String> openUnitFolders = {
-        'I': '1xlBGknJ0JDRo0PxZelW2lj7rb2qYzEq2',
-        'II': '1r2SJgfJTItihIzQd48tAGNwvclAOhafK',
-        'III': '1gh75o9hQj1GT-s9q0BHRH9Tm80DOqqc8',
-        'IV': '18VEw7UPmW833Hfn0hWQ0m3ZFGnprV80R',
-        'V': '17Ogns7Boe9baXS_htaYKq2uVp0hXAO1J',
-      };
-      
-      for (String unit in unitLetters) {
-        String unitFolderId = openUnitFolders[unit]!;
-        int notesCount = await _getNotesCount(unitFolderId, prefs);
-        
-        units.add({
-          'name': 'Unit $unit',
-          'notesCount': notesCount,
-          'folderId': unitFolderId,
-        });
-      }
-      return units;
-    }
-    
-    // For all other subjects - dynamic lookup
     for (String unit in unitLetters) {
       String? unitFolderId;
       int notesCount = 0;
       
-      // Try to find unit folder ID - FIRST try with subject ID format
       String unitKey = 'units_${subjectId}_$unit';
       if (prefs.containsKey(unitKey)) {
         unitFolderId = prefs.getString(unitKey);
         print("  ✅ Found unit $unit via subject ID: $unitKey = $unitFolderId");
       }
       
-      // If not found, try with folder ID format
       if (unitFolderId == null) {
         String fallbackKey = 'units_${subjectFolderId}_$unit';
         if (prefs.containsKey(fallbackKey)) {
@@ -277,7 +215,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         }
       }
       
-      // Get notes count if folder exists
       if (unitFolderId != null && unitFolderId.isNotEmpty) {
         notesCount = await _getNotesCount(unitFolderId, prefs);
       }
@@ -304,84 +241,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       print("Error getting notes count: $e");
     }
     return 0;
-  }
-
-  Future<void> _checkAndAddRSSubject(List<Map<String, dynamic>> subjects, SharedPreferences prefs) async {
-    bool exists = subjects.any((s) => s['name'] == 'RS');
-    if (!exists) {
-      print("📚 Adding RS subject manually");
-      
-      List<Map<String, dynamic>> units = [];
-      Map<String, String> rsUnitFolders = {
-        'I': '1FwBH7iwBKvZQ4BRXiZAkJ_IKOyJ3Vb6M',
-        'II': '1SaaJxDQwNTRqTFBHsAYSMVIHn1nQFdff',
-        'III': '1THxPyW7ssYDeNYqthrEiVsaw5ZK-ah1H',
-        'IV': '1voQFo7IYHCuN5-LSCepMaCZSaIcfiNqx',
-        'V': '1GLu9XplupRJ37zP9UnujMYXlktS-HJZz',
-      };
-      
-      for (String unit in ['I', 'II', 'III', 'IV', 'V']) {
-        String unitFolderId = rsUnitFolders[unit]!;
-        int notesCount = await _getNotesCount(unitFolderId, prefs);
-        
-        units.add({
-          'name': 'Unit $unit',
-          'notesCount': notesCount,
-          'folderId': unitFolderId,
-        });
-      }
-      
-      subjects.add({
-        'name': 'RS',
-        'code': '23CAI111',
-        'folderId': '1ovvB4fhWWrUE1K9s_rwBzXuDhh09ae8I',
-        'id': 'rs_23cai111',
-        'year': 'III',
-        'semester': 'II',
-        'units': units,
-      });
-      
-      print("✅ Added RS subject manually with ${units.length} units");
-    }
-  }
-
-  Future<void> _checkAndAddOpenSubject(List<Map<String, dynamic>> subjects, SharedPreferences prefs) async {
-    bool exists = subjects.any((s) => s['name'] == 'Open');
-    if (!exists) {
-      print("📚 Adding Open subject manually");
-      
-      List<Map<String, dynamic>> units = [];
-      Map<String, String> openUnitFolders = {
-        'I': '1xlBGknJ0JDRo0PxZelW2lj7rb2qYzEq2',
-        'II': '1r2SJgfJTItihIzQd48tAGNwvclAOhafK',
-        'III': '1gh75o9hQj1GT-s9q0BHRH9Tm80DOqqc8',
-        'IV': '18VEw7UPmW833Hfn0hWQ0m3ZFGnprV80R',
-        'V': '17Ogns7Boe9baXS_htaYKq2uVp0hXAO1J',
-      };
-      
-      for (String unit in ['I', 'II', 'III', 'IV', 'V']) {
-        String unitFolderId = openUnitFolders[unit]!;
-        int notesCount = await _getNotesCount(unitFolderId, prefs);
-        
-        units.add({
-          'name': 'Unit $unit',
-          'notesCount': notesCount,
-          'folderId': unitFolderId,
-        });
-      }
-      
-      subjects.add({
-        'name': 'Open',
-        'code': '23CA112',
-        'folderId': '1RAugGlwXZrcb7899dQgGakwU0lhIw-Nv',
-        'id': 'open_23ca112',
-        'year': 'III',
-        'semester': 'I',
-        'units': units,
-      });
-      
-      print("✅ Added Open subject manually with ${units.length} units");
-    }
   }
 
   void _navigateToSubject(Map<String, dynamic> subject) {
@@ -498,6 +357,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
+  // FIXED: Changed bool to String? for uploadFile return
   Future<void> _uploadToSubject(Map<String, dynamic> subject) async {
     String? selectedUnit = await showDialog<String>(
       context: context,
@@ -524,7 +384,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           builder: (context) => const Center(child: CircularProgressIndicator()),
         );
 
-        bool success = await _driveService.uploadFile(
+        // FIX: Now receives String? instead of bool
+        String? fileId = await _driveService.uploadFile(
           result.files.single.path!,
           result.files.single.name,
           subject['folderId'],
@@ -532,12 +393,16 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
         if (mounted) Navigator.pop(context);
 
-        if (success) {
+        if (fileId != null) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('✅ Uploaded to ${subject['name']} - $selectedUnit')),
           );
           
           await _loadSubjectsForCurrentYearSemester();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('❌ Upload failed'), backgroundColor: Colors.red),
+          );
         }
       }
     }
@@ -611,7 +476,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Greeting Card
               SlideTransition(
                 position: _slideAnimation,
                 child: Container(
@@ -688,7 +552,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               
               const SizedBox(height: 24),
               
-              // Section Title
               SlideTransition(
                 position: _slideAnimation,
                 child: Row(
@@ -728,7 +591,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               
               const SizedBox(height: 16),
               
-              // Subjects List
               ..._subjects.asMap().entries.map((entry) {
                 int index = entry.key;
                 var subject = entry.value;
@@ -764,7 +626,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Subject Header
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -832,7 +693,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         
         const SizedBox(height: 8),
         
-        // Units
         Container(
           margin: const EdgeInsets.only(left: 16),
           child: Column(
@@ -871,7 +731,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       ),
                       child: Row(
                         children: [
-                          // Unit Circle
                           Container(
                             width: 44,
                             height: 44,
@@ -914,7 +773,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                           
                           const SizedBox(width: 16),
                           
-                          // Unit info
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -956,7 +814,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                             ),
                           ),
                           
-                          // Arrow or Lock
                           if (isSynced)
                             Icon(Icons.arrow_forward, color: unitColor)
                           else
@@ -982,7 +839,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       child: ListView(
         padding: EdgeInsets.zero,
         children: [
-          // User Header with gradient
           Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
