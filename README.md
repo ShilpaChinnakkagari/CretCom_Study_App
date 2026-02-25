@@ -73,3 +73,37 @@ VII. 🚀 Future Scope
     --> Integration of an AI-based assistant (ChatGPT-like model) for academic support
     --> Unit-wise answer generation and explanation support
     --> Ability to save AI-generated content directly into the respective unit folders in Google Drive
+
+![WhatsApp Image 2026-02-25 at 11 37 06 AM](https://github.com/user-attachments/assets/aceb53bf-db8e-4441-8109-234f6e8d5527)
+![WhatsApp Image 2026-02-25 at 11 37 07 AM](https://github.com/user-attachments/assets/b17c453f-96a0-4594-9c5f-fa364d598bcf)
+![WhatsApp Image 2026-02-25 at 11 37 07 AM (1)](https://github.com/user-attachments/assets/900e8c96-53c5-449d-90b7-351593338b0a)
+![WhatsApp Image 2026-02-25 at 11 37 07 AM (2)](https://github.com/user-attachments/assets/17855738-d10d-4f21-9adc-e35d4a943d77)
+![WhatsApp Image 2026-02-25 at 11 37 09 AM](https://github.com/user-attachments/assets/53afdd0f-9f64-47fa-84e3-15b77fa2514c)
+![WhatsApp Image 2026-02-25 at 11 37 09 AM (1)](https://github.com/user-attachments/assets/5fa5e291-f313-4d07-a8a1-2f4e0acbcfb2)
+![WhatsApp Image 2026-02-25 at 11 37 10 AM](https://github.com/user-attachments/assets/3945b7e8-7f94-40a3-a083-159e4a44c3b2)
+![WhatsApp Image 2026-02-25 at 11 37 10 AM (1)](https://github.com/user-attachments/assets/fd1529f8-33e0-4f76-b482-fee5430f378f)
+![WhatsApp Image 2026-02-25 at 11 37 10 AM (2)](https://github.com/user-attachments/assets/02757d0b-3477-49d2-98e0-503ca691ac8a)
+![WhatsApp Image 2026-02-25 at 11 37 11 AM](https://github.com/user-attachments/assets/65104b01-d987-45f9-8ead-8be088fa617d)
+![WhatsApp Image 2026-02-25 at 11 37 11 AM (1)](https://github.com/user-attachments/assets/e4345b28-7b33-4b48-acb5-f5c9b842610a)
+![WhatsApp Image 2026-02-25 at 11 37 12 AM](https://github.com/user-attachments/assets/74b38956-7399-4b43-9244-03658b0365ac)
+![WhatsApp Image 2026-02-25 at 11 37 12 AM (1)](https://github.com/user-attachments/assets/af931280-bded-4b1d-8c58-5163d4b63e90)
+![WhatsApp Image 2026-02-25 at 11 37 13 AM](https://github.com/user-attachments/assets/2737352b-7825-418d-8ac5-1a8295e7bf4f)
+![WhatsApp Image 2026-02-25 at 11 37 13 AM (1)](https://github.com/user-attachments/assets/2fc35dc3-6fb8-4428-b8fe-b03e322c2af3)
+![WhatsApp Image 2026-02-25 at 11 37 13 AM (2)](https://github.com/user-attachments/assets/126fa48c-2bb3-4f51-b85a-3b3cb52a65fa)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
