@@ -28,9 +28,14 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   List<Map<String, dynamic>> _subjects = [];
   bool _isLoading = true;
   
+  // Navigation variables
   String? _navigateYear;
   String? _navigateSemester;
   Map<String, dynamic>? _navigateSubject;
+  
+  // NEW: Separate list for navigation subjects
+  List<Map<String, dynamic>> _navigationSubjects = [];
+  bool _loadingNavSubjects = false;
   
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -168,14 +173,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             print("❌ Error parsing subjects JSON: $e");
           }
         }
-      } else {
-        if (key.startsWith('subjects_')) {
-          print("⏭️ Skipping subject from different year/semester: $key");
-        }
       }
     }
-    
-    // REMOVED static subject additions
     
     setState(() {
       _subjects = loadedSubjects;
@@ -185,6 +184,70 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     print("🔥 FINAL subjects count: ${_subjects.length}");
     for (var s in _subjects) {
       print("   - ${s['name']} with ${s['units']?.length ?? 0} units");
+    }
+  }
+
+  // NEW: Load subjects for navigation selection
+  Future<void> _loadNavigationSubjects(String year, String semester) async {
+    setState(() {
+      _loadingNavSubjects = true;
+      _navigationSubjects = [];
+      _navigateSubject = null;
+    });
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final keys = prefs.getKeys();
+      
+      List<Map<String, dynamic>> loadedSubjects = [];
+      String expectedKeyPrefix = 'subjects_${year}_${semester}_';
+      
+      for (String key in keys) {
+        if (key.startsWith(expectedKeyPrefix)) {
+          String? subjectsJson = prefs.getString(key);
+          if (subjectsJson != null && subjectsJson.isNotEmpty) {
+            try {
+              List<dynamic> subjectList = jsonDecode(subjectsJson);
+              
+              for (var subjectData in subjectList) {
+                String subjectId = subjectData['id'] ?? '';
+                String subjectFolderId = subjectData['folderId'] ?? '';
+                String subjectName = subjectData['name'] ?? 'Unknown';
+                String subjectCode = subjectData['courseCode'] ?? '000';
+                
+                List<Map<String, dynamic>> units = await _loadUnitsForSubject(
+                  subjectId, subjectFolderId, subjectName, prefs
+                );
+                
+                loadedSubjects.add({
+                  'name': subjectName,
+                  'code': subjectCode,
+                  'folderId': subjectFolderId,
+                  'id': subjectId,
+                  'year': year,
+                  'semester': semester,
+                  'units': units,
+                });
+              }
+            } catch (e) {
+              print("❌ Error parsing navigation subjects JSON: $e");
+            }
+          }
+        }
+      }
+      
+      setState(() {
+        _navigationSubjects = loadedSubjects;
+        _loadingNavSubjects = false;
+      });
+      
+      print("📚 Loaded ${loadedSubjects.length} subjects for Year $year, Sem $semester");
+      
+    } catch (e) {
+      print("❌ Error loading navigation subjects: $e");
+      setState(() {
+        _loadingNavSubjects = false;
+      });
     }
   }
 
@@ -245,14 +308,14 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   void _navigateToSubject(Map<String, dynamic> subject) {
     final year = AcademicYear(
-      id: _userProfile?.currentYear ?? 'I',
-      name: _userProfile?.currentYear ?? 'I',
+      id: subject['year'] ?? _userProfile?.currentYear ?? 'I',
+      name: subject['year'] ?? _userProfile?.currentYear ?? 'I',
       type: _userProfile?.program ?? 'UG'
     );
     
     final semester = Semester(
-      id: _userProfile?.currentSemester ?? 'I',
-      name: 'Semester ${_userProfile?.currentSemester ?? 'I'}'
+      id: subject['semester'] ?? _userProfile?.currentSemester ?? 'I',
+      name: 'Semester ${subject['semester'] ?? _userProfile?.currentSemester ?? 'I'}'
     );
     
     final subjectObj = Subject(
@@ -357,7 +420,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
-  // FIXED: Changed bool to String? for uploadFile return
   Future<void> _uploadToSubject(Map<String, dynamic> subject) async {
     String? selectedUnit = await showDialog<String>(
       context: context,
@@ -384,7 +446,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           builder: (context) => const Center(child: CircularProgressIndicator()),
         );
 
-        // FIX: Now receives String? instead of bool
         String? fileId = await _driveService.uploadFile(
           result.files.single.path!,
           result.files.single.name,
@@ -399,10 +460,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           );
           
           await _loadSubjectsForCurrentYearSemester();
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('❌ Upload failed'), backgroundColor: Colors.red),
-          );
         }
       }
     }
@@ -476,6 +533,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Greeting Card
               SlideTransition(
                 position: _slideAnimation,
                 child: Container(
@@ -552,6 +610,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               
               const SizedBox(height: 24),
               
+              // Section Title
               SlideTransition(
                 position: _slideAnimation,
                 child: Row(
@@ -591,6 +650,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               
               const SizedBox(height: 16),
               
+              // Subjects List
               ..._subjects.asMap().entries.map((entry) {
                 int index = entry.key;
                 var subject = entry.value;
@@ -626,6 +686,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Subject Header
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -693,6 +754,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         
         const SizedBox(height: 8),
         
+        // Units
         Container(
           margin: const EdgeInsets.only(left: 16),
           child: Column(
@@ -731,6 +793,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       ),
                       child: Row(
                         children: [
+                          // Unit Circle
                           Container(
                             width: 44,
                             height: 44,
@@ -773,6 +836,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                           
                           const SizedBox(width: 16),
                           
+                          // Unit info
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -814,6 +878,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                             ),
                           ),
                           
+                          // Arrow or Lock
                           if (isSynced)
                             Icon(Icons.arrow_forward, color: unitColor)
                           else
@@ -834,232 +899,277 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
+  // FIXED: Drawer with SafeArea and SingleChildScrollView for small screens
+  // FIXED: Navigation subjects now load correctly for selected year/semester
+  // REMOVED: Quick Upload button from drawer
   Widget _buildDrawer(BuildContext context, User? user, ThemeService themeService, bool isDark) {
-    return Drawer(
-      child: ListView(
-        padding: EdgeInsets.zero,
-        children: [
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: isDark
-                    ? [const Color(0xFF6A1B9A), const Color(0xFF4A148C)]
-                    : [Colors.blue.shade400, Colors.blue.shade600],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-            ),
-            child: UserAccountsDrawerHeader(
-              accountName: Text(
-                user?.displayName ?? 'Student',
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              accountEmail: Text(user?.email ?? ''),
-              currentAccountPicture: CircleAvatar(
-                backgroundImage: user?.photoURL != null
-                    ? NetworkImage(user!.photoURL!)
-                    : null,
-                child: user?.photoURL == null
-                    ? const Icon(Icons.person, size: 40, color: Colors.blue)
-                    : null,
-              ),
-              decoration: const BoxDecoration(color: Colors.transparent),
-            ),
-          ),
-          
-          ListTile(
-            leading: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: isDark ? Colors.green.shade900.withOpacity(0.3) : Colors.green.shade50,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.cloud_upload, color: isDark ? Colors.green.shade300 : Colors.green.shade700),
-            ),
-            title: const Text('Sync to Google Drive'),
-            onTap: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Syncing...')),
-              );
-            },
-          ),
-          
-          const Divider(),
-          
-          ListTile(
-            leading: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: isDark ? Colors.blue.shade900.withOpacity(0.3) : Colors.blue.shade50,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.person, color: isDark ? Colors.blue.shade300 : Colors.blue.shade700),
-            ),
-            title: const Text('Profile'),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const ProfileScreen(),
+    return SafeArea(
+      child: Drawer(
+        child: Container(
+          width: MediaQuery.of(context).size.width * 0.85, // Responsive width
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(), // Smooth scrolling
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // User Header with gradient
+                Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: isDark
+                          ? [const Color(0xFF6A1B9A), const Color(0xFF4A148C)]
+                          : [Colors.blue.shade400, Colors.blue.shade600],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                  ),
+                  child: UserAccountsDrawerHeader(
+                    accountName: Text(
+                      user?.displayName ?? 'Student',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    accountEmail: Text(user?.email ?? ''),
+                    currentAccountPicture: CircleAvatar(
+                      backgroundColor: Colors.white,
+                      child: Text(
+                        user?.displayName?[0].toUpperCase() ?? 'S',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.purple : Colors.blue,
+                        ),
+                      ),
+                    ),
+                    decoration: const BoxDecoration(color: Colors.transparent),
+                  ),
                 ),
-              ).then((_) => _loadUserProfile());
-            },
-          ),
-          
-          const Divider(),
-          
-          ListTile(
-            leading: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: isDark ? Colors.purple.shade900.withOpacity(0.3) : Colors.purple.shade50,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.palette, color: isDark ? Colors.purple.shade300 : Colors.purple.shade700),
-            ),
-            title: const Text('Theme'),
-            trailing: DropdownButton<AppTheme>(
-              value: themeService.currentTheme,
-              underline: const SizedBox(),
-              items: const [
-                DropdownMenuItem(value: AppTheme.light, child: Text('Light')),
-                DropdownMenuItem(value: AppTheme.dark, child: Text('Dark')),
-                DropdownMenuItem(value: AppTheme.system, child: Text('System')),
+                
+                _buildDrawerItem(
+                  icon: Icons.cloud_upload,
+                  label: 'Sync to Google Drive',
+                  iconColor: isDark ? Colors.green.shade300 : Colors.green.shade700,
+                  bgColor: isDark ? Colors.green.shade900.withOpacity(0.3) : Colors.green.shade50,
+                  onTap: () {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Syncing...')),
+                    );
+                  },
+                ),
+                
+                const Divider(),
+                
+                _buildDrawerItem(
+                  icon: Icons.person,
+                  label: 'Profile',
+                  iconColor: isDark ? Colors.blue.shade300 : Colors.blue.shade700,
+                  bgColor: isDark ? Colors.blue.shade900.withOpacity(0.3) : Colors.blue.shade50,
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const ProfileScreen()),
+                    ).then((_) => _loadUserProfile());
+                  },
+                ),
+                
+                const Divider(),
+                
+                // Theme selector
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: isDark ? Colors.purple.shade900.withOpacity(0.3) : Colors.purple.shade50,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(Icons.palette, color: isDark ? Colors.purple.shade300 : Colors.purple.shade700),
+                  ),
+                  title: const Text('Theme'),
+                  trailing: DropdownButton<AppTheme>(
+                    value: themeService.currentTheme,
+                    underline: const SizedBox(),
+                    items: const [
+                      DropdownMenuItem(value: AppTheme.light, child: Text('Light')),
+                      DropdownMenuItem(value: AppTheme.dark, child: Text('Dark')),
+                      DropdownMenuItem(value: AppTheme.system, child: Text('System')),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) themeService.setTheme(value);
+                    },
+                  ),
+                ),
+                
+                const Divider(),
+                
+                // REMOVED: Quick Upload button was here
+                
+                const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text(
+                    'NAVIGATE TO OTHER YEARS',
+                    style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
+                  ),
+                ),
+                
+                // Year selector
+                _buildYearSelector(isDark),
+                
+                const Divider(),
+                
+                const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text(
+                    'QUICK ACCESS',
+                    style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
+                  ),
+                ),
+                
+                // Quick access years
+                ...['I', 'II', 'III', 'IV'].map((year) => 
+                  _buildDrawerItem(
+                    icon: Icons.calendar_today,
+                    label: 'Year $year',
+                    iconColor: isDark ? Colors.grey.shade300 : Colors.grey.shade700,
+                    bgColor: isDark ? Colors.grey.shade800 : Colors.grey.shade200,
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => YearScreen(academicType: _userProfile?.program ?? 'UG'),
+                        ),
+                      );
+                    },
+                  )
+                ).toList(),
+                
+                // Extra bottom padding for small screens
+                const SizedBox(height: 40),
               ],
-              onChanged: (value) {
-                if (value != null) themeService.setTheme(value);
-              },
             ),
           ),
-          
-          const Divider(),
-          
-          ListTile(
-            leading: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: isDark ? Colors.orange.shade900.withOpacity(0.3) : Colors.orange.shade50,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.upload_file, color: isDark ? Colors.orange.shade300 : Colors.orange.shade700),
-            ),
-            title: const Text('Quick Upload'),
-            onTap: () async {
-              Navigator.pop(context);
-              await _quickUpload();
+        ),
+      ),
+    );
+  }
+
+  // Helper method to build consistent drawer items
+  Widget _buildDrawerItem({
+    required IconData icon,
+    required String label,
+    required Color iconColor,
+    required Color bgColor,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: bgColor,
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, color: iconColor, size: 20),
+      ),
+      title: Text(label, style: const TextStyle(fontSize: 14)),
+      onTap: onTap,
+    );
+  }
+
+  // FIXED: Year selector with proper subject loading
+  Widget _buildYearSelector(bool isDark) {
+    return Column(
+      children: [
+        ListTile(
+          leading: const Icon(Icons.calendar_today, color: Colors.blue, size: 20),
+          title: const Text('Select Year', style: TextStyle(fontSize: 14)),
+          trailing: DropdownButton<String>(
+            hint: const Text('Year'),
+            value: _navigateYear,
+            items: ['I', 'II', 'III', 'IV'].map((year) {
+              return DropdownMenuItem(value: year, child: Text('Year $year'));
+            }).toList(),
+            onChanged: (value) {
+              setState(() {
+                _navigateYear = value;
+                _navigateSemester = null;
+                _navigateSubject = null;
+                _navigationSubjects = []; // Clear subjects when year changes
+              });
             },
           ),
-          
-          const Divider(),
-          
-          const Padding(
-            padding: EdgeInsets.all(16),
-            child: Text(
-              'NAVIGATE TO OTHER YEARS',
-              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
-            ),
-          ),
-          
+        ),
+        
+        if (_navigateYear != null)
           ListTile(
-            leading: const Icon(Icons.calendar_today, color: Colors.blue),
-            title: const Text('Select Year'),
+            leading: const Icon(Icons.school, color: Colors.green, size: 20),
+            title: const Text('Select Semester', style: TextStyle(fontSize: 14)),
             trailing: DropdownButton<String>(
-              hint: const Text('Year'),
-              value: _navigateYear,
-              items: ['I', 'II', 'III', 'IV'].map((year) {
-                return DropdownMenuItem(value: year, child: Text('Year $year'));
+              hint: const Text('Semester'),
+              value: _navigateSemester,
+              items: ['I', 'II'].map((sem) {
+                return DropdownMenuItem(value: sem, child: Text('Semester $sem'));
               }).toList(),
               onChanged: (value) {
                 setState(() {
-                  _navigateYear = value;
-                  _navigateSemester = null;
+                  _navigateSemester = value;
                   _navigateSubject = null;
                 });
+                // Load subjects for selected year and semester
+                if (_navigateYear != null && value != null) {
+                  _loadNavigationSubjects(_navigateYear!, value);
+                }
               },
             ),
           ),
-          
-          if (_navigateYear != null)
-            ListTile(
-              leading: const Icon(Icons.school, color: Colors.green),
-              title: const Text('Select Semester'),
-              trailing: DropdownButton<String>(
-                hint: const Text('Semester'),
-                value: _navigateSemester,
-                items: ['I', 'II'].map((sem) {
-                  return DropdownMenuItem(value: sem, child: Text('Semester $sem'));
-                }).toList(),
-                onChanged: (value) {
-                  setState(() {
-                    _navigateSemester = value;
-                    _navigateSubject = null;
-                  });
-                },
-              ),
-            ),
-          
-          if (_navigateYear != null && _navigateSemester != null)
-            ListTile(
-              leading: const Icon(Icons.book, color: Colors.orange),
-              title: const Text('Select Subject'),
-              trailing: DropdownButton<Map<String, dynamic>>(
-                hint: const Text('Subject'),
-                value: _navigateSubject,
-                items: _subjects.map((subject) {
-                  return DropdownMenuItem<Map<String, dynamic>>(
-                    value: subject,
-                    child: Text('${subject['name']} (${subject['code']})'),
-                  );
-                }).toList(),
-                onChanged: (value) {
-                  setState(() {
-                    _navigateSubject = value;
-                  });
-                  if (value != null) {
-                    Navigator.pop(context);
-                    _navigateToSubject(value);
-                  }
-                },
-              ),
-            ),
-          
-          const Divider(),
-          
-          const Padding(
-            padding: EdgeInsets.all(16),
-            child: Text(
-              'QUICK ACCESS',
-              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
-            ),
-          ),
-          
-          ...['I', 'II', 'III', 'IV'].map((year) => ListTile(
-            leading: CircleAvatar(
-              radius: 15,
-              backgroundColor: isDark ? Colors.grey.shade800 : Colors.grey.shade200,
-              child: Text(
-                year,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: isDark ? Colors.white : Colors.grey.shade700,
+        
+        if (_navigateYear != null && _navigateSemester != null)
+          _loadingNavSubjects
+              ? const Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              : ListTile(
+                  leading: const Icon(Icons.book, color: Colors.orange, size: 20),
+                  title: Text(
+                    'Select Subject',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: _navigationSubjects.isEmpty ? Colors.grey : null,
+                    ),
+                  ),
+                  trailing: _navigationSubjects.isEmpty
+                      ? const Text(
+                          'No subjects',
+                          style: TextStyle(color: Colors.grey, fontSize: 12),
+                        )
+                      : DropdownButton<Map<String, dynamic>>(
+                          hint: const Text('Subject'),
+                          value: _navigateSubject,
+                          items: _navigationSubjects.map((subject) {
+                            return DropdownMenuItem<Map<String, dynamic>>(
+                              value: subject,
+                              child: Text(
+                                '${subject['name']} (${subject['code']})',
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            );
+                          }).toList(),
+                          onChanged: _navigationSubjects.isEmpty
+                              ? null
+                              : (value) {
+                                  setState(() {
+                                    _navigateSubject = value;
+                                  });
+                                  if (value != null) {
+                                    Navigator.pop(context);
+                                    _navigateToSubject(value);
+                                  }
+                                },
+                        ),
                 ),
-              ),
-            ),
-            title: Text('Year $year'),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => YearScreen(academicType: _userProfile?.program ?? 'UG'),
-                ),
-              );
-            },
-          )).toList(),
-        ],
-      ),
+      ],
     );
   }
 
