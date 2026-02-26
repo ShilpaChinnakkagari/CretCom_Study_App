@@ -3,7 +3,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shilpa_study_app/models/academic_models.dart';
 import 'package:shilpa_study_app/services/drive_service.dart';
 import 'notes_screen.dart';
-import 'question_bank_screen.dart';
 
 class UnitScreen extends StatefulWidget {
   final String academicType;
@@ -33,33 +32,25 @@ class _UnitScreenState extends State<UnitScreen> with SingleTickerProviderStateM
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
 
-  // Only showing the key change in initState and _loadUnits
-
-@override
-void initState() {
-  super.initState();
-  // IMPROVED: Use subject ID in base key for consistency with home screen lookup
-  _baseKey = 'units_${widget.subject.id}';  // This matches what home screen looks for
-  // _baseKey = 'units_${widget.subject.name}_${widget.subject.courseCode}' // Old way
-      // .replaceAll(' ', '_')
-      // .replaceAll('(', '')
-      // .replaceAll(')', '');
-  
-  // Setup animations
-  _animationController = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 800),
-  );
-  _fadeAnimation = CurvedAnimation(
-    parent: _animationController,
-    curve: Curves.easeIn,
-  );
-  _animationController.forward();
-  
-  print("🔑 Unit base key: $_baseKey");
-  print("📁 Subject folder ID: ${widget.subject.folderId}");
-  _loadUnits();
-}
+  @override
+  void initState() {
+    super.initState();
+    _baseKey = 'units_${widget.subject.id}';
+    
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    _fadeAnimation = CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeIn,
+    );
+    _animationController.forward();
+    
+    print("🔑 Unit base key: $_baseKey");
+    print("📁 Subject folder ID: ${widget.subject.folderId}");
+    _loadUnits();
+  }
 
   @override
   void dispose() {
@@ -300,41 +291,14 @@ void initState() {
                                 onPressed: _isLoading ? null : () => _createSingleUnit(unit),
                                 tooltip: 'Create in Drive',
                               ),
-                            PopupMenuButton(
-                              icon: Icon(
-                                Icons.more_vert,
-                                color: isSynced 
-                                    ? theme.colorScheme.onSurface 
-                                    : theme.colorScheme.onSurface.withOpacity(0.3),
-                              ),
-                              enabled: isSynced,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              itemBuilder: (context) => [
-                                const PopupMenuItem(
-                                  value: 'notes',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.note, size: 20, color: Colors.blue),
-                                      SizedBox(width: 8),
-                                      Text('Notes', style: TextStyle(fontSize: 14)),
-                                    ],
-                                  ),
+                            // Direct Notes button - no popup menu
+                            if (isSynced)
+                              IconButton(
+                                icon: Icon(
+                                  Icons.note,
+                                  color: Colors.blue,
                                 ),
-                                const PopupMenuItem(
-                                  value: 'questions',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.question_answer, size: 20, color: Colors.green),
-                                      SizedBox(width: 8),
-                                      Text('Question Bank', style: TextStyle(fontSize: 14)),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                              onSelected: (value) {
-                                if (value == 'notes') {
+                                onPressed: () {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
@@ -346,21 +310,9 @@ void initState() {
                                       ),
                                     ),
                                   );
-                                } else if (value == 'questions') {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => QuestionBankScreen(
-                                        year: widget.year,
-                                        semester: widget.semester,
-                                        subject: widget.subject,
-                                        unit: unit,
-                                      ),
-                                    ),
-                                  );
-                                }
-                              },
-                            ),
+                                },
+                                tooltip: 'Notes',
+                              ),
                           ],
                         ),
                       ),
